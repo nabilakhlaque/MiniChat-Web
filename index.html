@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="MiniChat">
+<meta name="theme-color" content="#EDF2F7">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<title>MiniChat</title>
+<style>
+/* ---------- grund ---------- */
+html, body { height: 100%; margin: 0; overflow: hidden; background: #EDF2F7; color: #1F2A37; position: fixed; width: 100%;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; font-size: 15px; -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+button { font-family: inherit; -webkit-appearance: none; }
+svg { display: block; }
+.hidden { display: none !important; }
+#app { position: absolute; top: 0; left: 0; right: 0; height: 100%; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes popin { from { opacity: 0; transform: scale(.95) translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes flash { 0% { opacity: 0; } 20% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(6px); } }
+.shaking { animation: shake .5s ease-in-out; }
+#flash { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: #3C8CE7; opacity: 0; pointer-events: none; z-index: 60; }
+#flash.on { animation: flash .7s ease-out; }
+
+/* ---------- avatarer ---------- */
+.av { width: 32px; height: 32px; border-radius: 50%; background-color: #B9C6D6; background-position: center; background-size: cover; background-repeat: no-repeat;
+  color: #fff; font-weight: 600; text-align: center; line-height: 32px; font-size: 14px; overflow: hidden; flex: 0 0 auto; }
+.av.lg { width: 42px; height: 42px; line-height: 42px; font-size: 18px; }
+.av.sm { width: 24px; height: 24px; line-height: 24px; font-size: 11px; }
+
+/* ---------- header ---------- */
+#header { position: absolute; top: 0; left: 0; right: 0; height: calc(64px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); background: #fff; z-index: 5;
+  box-shadow: 0 1px 0 #E3E9F0, 0 4px 16px rgba(16,24,40,.05); display: flex; align-items: center; padding-left: 14px; padding-right: 8px; box-sizing: border-box; }
+.meblock { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; }
+.avwrap { position: relative; flex: 0 0 auto; margin-right: 12px; cursor: pointer; }
+.avwrap .status { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; background: #34C759; border: 2px solid #fff; }
+.avwrap .status.busy { background: #E5484D; }
+.avwrap .status.away { background: #F5A623; }
+.meText { min-width: 0; }
+.meText .name { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meText .sub { font-size: 12px; color: #6B7A90; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ib { width: 42px; height: 42px; border-radius: 50%; border: 0; background: transparent; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0; outline: none; transition: background-color .15s, transform .1s; flex: 0 0 42px; }
+.ib svg { width: 22px; height: 22px; fill: #6B7A90; transition: fill .15s; }
+.ib:active { transform: scale(.9); background: #EEF3F8; }
+
+/* ---------- roster ---------- */
+#roster { position: absolute; top: calc(64px + env(safe-area-inset-top)); left: 0; right: 0; height: 44px; padding: 0 14px; display: flex; align-items: center;
+  white-space: nowrap; overflow-x: auto; overflow-y: hidden; font-size: 12px; color: #6B7A90; -webkit-overflow-scrolling: touch; }
+#roster .lbl { margin-right: 10px; flex: 0 0 auto; }
+.chip { display: inline-flex; align-items: center; background: #fff; border-radius: 999px; padding: 3px 11px 3px 3px; margin-right: 8px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08); color: #1F2A37; font-weight: 500; animation: pop .25s ease-out; flex: 0 0 auto; }
+.chip .av.sm { margin-right: 7px; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: #34C759; margin-left: 7px; flex: 0 0 8px; }
+.chip .dot.busy { background: #E5484D; }
+.chip .dot.away { background: #F5A623; }
+.pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #B9C6D6; margin-right: 8px; animation: pulse 1.6s ease-in-out infinite; }
+.conn { margin-left: auto; padding-left: 10px; flex: 0 0 auto; color: #B7791F; }
+.conn.ok { color: #2E9E5B; }
+
+/* ---------- logg ---------- */
+#log { position: absolute; top: calc(108px + env(safe-area-inset-top)); left: 0; right: 0; bottom: 90px; overflow-y: auto; overflow-x: hidden; padding: 6px 14px 10px; -webkit-overflow-scrolling: touch; }
+.sep { display: flex; justify-content: center; margin: 14px 0 6px; animation: fade .3s; }
+.sep span { background: #E1E8F0; color: #6B7A90; font-size: 11px; padding: 3px 10px; border-radius: 999px; }
+.sys { text-align: center; color: #94A3B8; font-size: 12px; margin: 8px 0; animation: fade .3s; }
+.gname { font-size: 12px; color: #6B7A90; margin: 10px 0 3px 44px; animation: fade .3s; }
+.msg { display: flex; align-items: flex-end; margin-top: 3px; animation: pop .22s ease-out; }
+.msg.first { margin-top: 8px; }
+.msg.me { justify-content: flex-end; }
+.msg .avslot { width: 32px; height: 32px; flex: 0 0 32px; margin-right: 10px; }
+.bubble { position: relative; max-width: 76%; min-width: 0; padding: 9px 14px; border-radius: 18px; line-height: 1.4; white-space: pre-wrap;
+  word-wrap: break-word; overflow-wrap: anywhere; font-size: 15px; box-shadow: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.08); -webkit-user-select: text; user-select: text; }
+.them .bubble { background: #fff; color: #1F2A37; }
+.them.last .bubble { border-bottom-left-radius: 6px; }
+.me .bubble { background: #DCEBFB; color: #13263F; }
+.me.last .bubble { border-bottom-right-radius: 6px; }
+.bubble a { color: #2F7FDB; text-decoration: none; }
+.time { font-size: 11px; color: #94A3B8; margin: 3px 0 0 44px; animation: fade .3s; }
+.time.me { text-align: right; margin: 3px 4px 0 0; }
+.st { font-size: 11px; color: #94A3B8; text-align: right; margin: 3px 4px 0 0; }
+.seenlbl { color: #3C8CE7; }
+
+/* filkort & bilder */
+.file { display: flex; align-items: center; min-width: 200px; white-space: normal; }
+.file .fic { width: 42px; height: 42px; border-radius: 13px; background: #EEF3F8; display: flex; align-items: center; justify-content: center; margin-right: 12px; flex: 0 0 42px; }
+.me .file .fic { background: rgba(255,255,255,.7); }
+.file .fic svg { width: 22px; height: 22px; fill: #2F7FDB; }
+.file .fbody { flex: 1 1 auto; min-width: 0; }
+.file .fn { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .fm { font-size: 12px; color: #6B7A90; margin-top: 2px; }
+.me .file .fm { color: #3B5775; }
+.bar { height: 3px; border-radius: 2px; background: rgba(16,24,40,.08); margin-top: 7px; overflow: hidden; }
+.bar i { display: block; height: 3px; width: 0; background: #2F7FDB; border-radius: 2px; transition: width .25s ease; }
+.facts { margin-top: 8px; }
+.facts a { display: inline-block; font-size: 12px; font-weight: 600; color: #2F7FDB; background: #EEF3F8; padding: 5px 11px; border-radius: 999px; margin-right: 6px; cursor: pointer; text-decoration: none !important; }
+.me .facts a { background: rgba(255,255,255,.75); }
+.thumb { display: block; max-width: 100%; max-height: 320px; border-radius: 14px; cursor: pointer; margin-bottom: 8px; }
+.bubble.img { padding: 6px; }
+.bubble.img .file { min-width: 0; padding: 0 6px 4px; }
+.bubble.img .fic { display: none; }
+
+/* reaktioner */
+.rbar { position: absolute; top: -34px; right: -2px; display: flex; background: #fff; border-radius: 999px; padding: 4px 6px; z-index: 3;
+  box-shadow: 0 6px 18px rgba(16,24,40,.18), 0 0 0 1px rgba(16,24,40,.04); opacity: 0; visibility: hidden; transform: translateY(4px) scale(.95);
+  transition: opacity .15s, transform .15s, visibility .15s; }
+.me .rbar { right: auto; left: -2px; }
+.bubble.show .rbar { opacity: 1; visibility: visible; transform: none; }
+@media (hover: hover) { .bubble:hover .rbar { opacity: 1; visibility: visible; transform: none; } }
+.rbar span { font-size: 20px; line-height: 30px; width: 34px; text-align: center; border-radius: 50%; cursor: pointer; }
+.rbar span:active { transform: scale(1.25); background: #EEF3F8; }
+.rx { position: absolute; bottom: -11px; right: 10px; display: flex; }
+.me .rx { right: auto; left: 10px; }
+.rx span { display: inline-block; background: #fff; border-radius: 999px; padding: 1px 7px; font-size: 12px; margin-left: 4px; animation: pop .2s;
+  box-shadow: 0 1px 3px rgba(16,24,40,.18), 0 0 0 1px rgba(16,24,40,.04); }
+.rx span.mine { background: #DCEBFB; }
+.msg.has-rx { margin-bottom: 12px; }
+
+/* ---------- composer ---------- */
+#composer { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); background: #EDF2F7; }
+.pill { display: flex; align-items: flex-end; background: #fff; border-radius: 26px; padding: 5px 5px 5px 4px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.06), 0 2px 8px rgba(16,24,40,.08); transition: box-shadow .15s; }
+.pill.focus { box-shadow: 0 0 0 3px rgba(60,140,231,.2), 0 2px 8px rgba(16,24,40,.08); }
+.pill .ib { flex: 0 0 40px; width: 40px; height: 40px; }
+#input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; resize: none; background: transparent; font-family: inherit; font-size: 16px;
+  line-height: 22px; padding: 9px 6px; height: 40px; max-height: 132px; overflow-y: auto; color: #1F2A37; box-sizing: border-box; }
+.send { width: 40px; height: 40px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; flex: 0 0 40px; display: flex; align-items: center;
+  justify-content: center; background: linear-gradient(135deg, #4A93EA, #2D7FDD); box-shadow: 0 4px 12px rgba(45,127,221,.35);
+  transition: transform .12s, opacity .15s, box-shadow .15s; outline: none; margin-left: 2px; }
+.send svg { width: 20px; height: 20px; fill: #fff; margin-left: 2px; }
+.send:active { transform: scale(.94); }
+.send.off { opacity: .4; box-shadow: none; transform: none; }
+.hint { text-align: center; font-size: 11px; color: #A3B1C2; margin-top: 6px; }
+
+/* ---------- meny ---------- */
+.pop { position: absolute; top: calc(56px + env(safe-area-inset-top)); right: 10px; width: 300px; max-width: calc(100% - 20px); max-height: calc(100% - 120px); overflow-y: auto; background: #fff;
+  border-radius: 16px; padding: 6px; z-index: 20; box-shadow: 0 12px 32px rgba(16,24,40,.18), 0 0 0 1px rgba(16,24,40,.04); transform-origin: top right; animation: popin .18s ease-out; -webkit-overflow-scrolling: touch; }
+.mi { display: flex; align-items: center; padding: 11px 10px; border-radius: 10px; cursor: pointer; font-size: 14px; }
+.mi:active { background: #F1F5F9; }
+.mi svg { width: 20px; height: 20px; fill: #6B7A90; margin-right: 12px; flex: 0 0 20px; }
+.mi .lab { flex: 1 1 auto; }
+.mi.danger { color: #C0392B; } .mi.danger svg { fill: #C0392B; }
+.msep { height: 1px; background: #EDF2F7; margin: 5px 8px; }
+.minfo { padding: 8px 12px 6px; font-size: 12px; color: #6B7A90; line-height: 1.55; }
+.minfo b { color: #1F2A37; font-size: 14px; display: block; margin-bottom: 1px; }
+.minfo .ok { color: #2E9E5B; }
+.sw { width: 36px; height: 20px; border-radius: 999px; background: #CBD5E1; position: relative; transition: background .18s; flex: 0 0 36px; }
+.sw i { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .18s; }
+.sw.on { background: #3C8CE7; } .sw.on i { left: 18px; }
+.seg { display: flex; background: #EEF3F8; border-radius: 999px; padding: 3px; margin: 4px 10px 8px; }
+.seg div { flex: 1 1 50%; text-align: center; font-size: 13px; font-weight: 600; padding: 7px 0; border-radius: 999px; cursor: pointer; color: #6B7A90; transition: background .15s, color .15s; }
+.seg div.on { background: #fff; color: #1F2A37; box-shadow: 0 1px 3px rgba(16,24,40,.14); }
+.seg div.on.busy { color: #C0392B; }
+
+/* ---------- modal ---------- */
+#modal { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+#modal .bd { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(31,42,55,.35); animation: fade .2s; }
+.card { position: relative; z-index: 1; width: 340px; max-width: calc(100% - 32px); box-sizing: border-box; background: #fff; border-radius: 20px; box-shadow: 0 20px 50px rgba(16,24,40,.25);
+  padding: 22px 20px 18px; animation: popin .2s ease-out; }
+.card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; }
+.card p { margin: 0 0 14px; color: #6B7A90; font-size: 13px; line-height: 1.5; }
+.inp { width: 100%; box-sizing: border-box; border: 1px solid #DCE3EC; border-radius: 12px; padding: 11px 12px; font-family: inherit; font-size: 16px;
+  outline: none; background: #F8FAFC; color: #1F2A37; }
+.inp:focus { border-color: #3C8CE7; box-shadow: 0 0 0 3px rgba(60,140,231,.18); background: #fff; }
+.btns { display: flex; justify-content: flex-end; margin-top: 16px; }
+.btn { border: 0; border-radius: 999px; padding: 10px 18px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; margin-left: 8px; outline: none; }
+.btn.pri { background: linear-gradient(135deg, #4A93EA, #2D7FDD); color: #fff; box-shadow: 0 4px 12px rgba(45,127,221,.3); }
+.btn.gho { background: #EEF3F8; color: #1F2A37; }
+.btn:active { transform: scale(.97); }
+.help { font-size: 13px; line-height: 1.55; color: #3B4A5E; max-height: 60vh; overflow: auto; padding-right: 4px; }
+.help ul { margin: 6px 0 10px; padding-left: 18px; } .help li { margin-bottom: 6px; }
+
+/* ---------- välkommen ---------- */
+#welcome { position: absolute; left: 0; top: 0; right: 0; bottom: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: #EDF2F7; padding: 16px; box-sizing: border-box;
+  background-image: radial-gradient(circle at 15% 10%, #DCEBFB 0, rgba(220,235,251,0) 55%), radial-gradient(circle at 85% 90%, #E6F0FA 0, rgba(230,240,250,0) 50%); overflow: auto; }
+.wcard { width: 360px; max-width: 100%; box-sizing: border-box; background: #fff; border-radius: 24px; box-shadow: 0 20px 60px rgba(16,24,40,.14); padding: 30px 26px 24px; text-align: center; animation: popin .35s ease-out; }
+.wlogo { width: 72px; height: 72px; border-radius: 22px; margin: 0 auto 16px; background: linear-gradient(135deg, #4A93EA, #2D7FDD); display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 24px rgba(45,127,221,.35); }
+.wlogo svg { width: 38px; height: 38px; fill: #fff; }
+.wcard h1 { margin: 0 0 6px; font-size: 24px; font-weight: 600; }
+.wcard p { margin: 0 0 18px; color: #6B7A90; font-size: 13.5px; line-height: 1.5; }
+.wcard .inp { text-align: center; margin-top: 10px; }
+.wcard .btn { width: 100%; margin: 14px 0 0; padding: 13px; }
+
+/* ---------- toast ---------- */
+#toast { position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: rgba(31,42,55,.92); color: #fff; font-size: 13px; padding: 9px 16px;
+  border-radius: 999px; box-shadow: 0 8px 24px rgba(16,24,40,.25); opacity: 0; visibility: hidden; transition: opacity .25s, transform .25s, visibility .25s; z-index: 30; white-space: nowrap; max-width: 90%; overflow: hidden; text-overflow: ellipsis; }
+#toast.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(-6px); }
+</style>
+</head>
+<body>
+<div id="flash"></div>
+<div id="app" class="hidden">
+  <div id="header">
+    <div class="meblock">
+      <div class="avwrap" id="meAvWrap"><div class="av lg" id="meAv"></div><span class="status" id="meDot"></span></div>
+      <div class="meText"><div class="name" id="meName">MiniChat</div><div class="sub" id="meSub">Tillgänglig · krypterat · via molnet</div></div>
+    </div>
+    <button class="ib" id="nudgeBtn" title="Knacka på"></button>
+    <button class="ib" id="gearBtn" title="Inställningar"></button>
+  </div>
+  <div id="roster"></div>
+  <div id="log"></div>
+  <div id="composer">
+    <div class="pill" id="pill">
+      <button class="ib" id="attachBtn" title="Skicka fil"></button>
+      <textarea id="input" rows="1" placeholder="Skriv ett meddelande…" enterkeyhint="send"></textarea>
+      <button class="send off" id="sendBtn" title="Skicka"></button>
+    </div>
+    <div class="hint" id="hint">Skriv *prutt* eller *skratt* för ljud hos den andra</div>
+  </div>
+  <input type="file" id="filepick" multiple style="display:none">
+  <input type="file" id="avpick" accept="image/*" style="display:none">
+  <div id="menu" class="pop hidden"></div>
+  <div id="toast"></div>
+</div>
+
+<div id="welcome" class="hidden">
+  <div class="wcard">
+    <div class="wlogo" id="wlogo"></div>
+    <h1>Hej!</h1>
+    <p>Skriv ditt namn och er familjekod – samma kod som i MiniChat på datorn. Inget konto behövs.</p>
+    <input class="inp" id="wname" maxlength="32" placeholder="Ditt namn" autocomplete="off">
+    <input class="inp" id="wcode" maxlength="64" placeholder="Familjekod" autocomplete="off" autocapitalize="none">
+    <button class="btn pri" id="wbtn">Börja chatta</button>
+  </div>
+</div>
+
+<div id="modal" class="hidden"><div class="bd" id="mbd"></div><div class="card" id="mcard"></div></div>
+
+<script>
+'use strict';
+// ============================================================ ikoner (Material Design, Apache 2.0)
+const I = {
+  gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
+  attach: 'M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z',
+  send: 'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
+  file: 'M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z',
+  image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  movie: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z',
+  music: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
+  zip: 'M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-2 6h-2v2h2v2h-2v2h-2v-2h2v-2h-2v-2h2v-2h-2V8h2v2h2v2z',
+  edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+  close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
+  cloud: 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z',
+  volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+  bell: 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
+  clear: 'M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12z',
+  info: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z',
+  nudge: 'M7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.39 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.02 1.45 3.39 3.77 3.54 6.42zM18 11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-6 11c.14 0 .27-.01.4-.04.65-.14 1.18-.58 1.44-1.18.1-.24.15-.5.15-.78h-4c.01 1.1.9 2 2.01 2z',
+  photo: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  chat: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM7 9h10v2H7V9zm6 5H7v-2h6v2zm4-6H7V6h10v2z'
+};
+const svg = p => `<svg viewBox="0 0 24 24"><path d="${p}"/></svg>`;
+const EMOJIS = ['👍', '❤️', '😂', '😮', '🙏'];
+const STATUS_TEXT = { online: 'Tillgänglig', busy: 'Upptagen', away: 'Ej vid datorn' };
+const SOUND_URLS = { ding: 'sounds/ding.wav', prutt: 'sounds/prutt.wav', skratt: 'sounds/skratt.wav', knock: 'sounds/knock.wav' };
+const MAX_TEXT_FRAME = 2700, CLOUD_FILE_LIMIT = 5 * 1024 * 1024, MAX_AVATAR = 96 * 1024;
+const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ============================================================ hjälp
+const $ = id => document.getElementById(id);
+const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+const text = (e, s) => { e.appendChild(document.createTextNode(s)); return e; };
+const te = new TextEncoder(), td = new TextDecoder();
+const utf8 = s => te.encode(s);
+const str = b => td.decode(b);
+function b64(bytes) { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+function unb64(s) { const bin = atob(s); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+const hex = bytes => Array.prototype.map.call(bytes, b => ('0' + b.toString(16)).slice(-2)).join('');
+function concat(a, b) { const o = new Uint8Array(a.length + b.length); o.set(a, 0); o.set(b, a.length); return o; }
+function randId() { return hex(crypto.getRandomValues(new Uint8Array(16))); }
+const EPOCH_TICKS = 621355968000000000n;
+const nowTicks = () => (BigInt(Date.now()) * 10000n + EPOCH_TICKS).toString();
+function ticksToMs(t) { try { return Number((BigInt(t) - EPOCH_TICKS) / 10000n); } catch (e) { return Date.now(); } }
+function cleanName(n) { n = (n || '').replace(/[|\r\n]/g, ' ').trim(); if (n.length > 32) n = n.slice(0, 32); return n || 'Okänd'; }
+function sizeText(n) { if (n < 1024) return n + ' B'; if (n < 1048576) return (n / 1024).toFixed(1).replace('.', ',') + ' kB'; if (n < 1073741824) return (n / 1048576).toFixed(1).replace('.', ',') + ' MB'; return (n / 1073741824).toFixed(2).replace('.', ',') + ' GB'; }
+function frame(header, body) { const h = utf8(header + '\n'); return body ? concat(h, body) : h; }
+function parseFrame(bytes) { const nl = bytes.indexOf(10); const header = str(nl < 0 ? bytes : bytes.subarray(0, nl)); const body = nl < 0 ? new Uint8Array(0) : bytes.subarray(nl + 1); return { p: header.split('|'), body }; }
+
+// ============================================================ tillstånd
+const S = { server: 'https://ntfy.sh', code: '', id: '', name: '', status: 'online', sound: true, notify: true, avatar: '', lastId: '', history: [], avatars: {}, reactions: {}, seen: [] };
+function load() { try { Object.assign(S, JSON.parse(localStorage.getItem('minichat') || '{}')); } catch (e) { } if (!S.id) S.id = randId(); }
+function save() { try { localStorage.setItem('minichat', JSON.stringify(S)); } catch (e) { } }
+const seenSet = new Set();
+function markSeen(id) { if (seenSet.has(id)) return false; seenSet.add(id); S.seen.push(id); if (S.seen.length > 3000) S.seen.splice(0, S.seen.length - 3000); return true; }
+
+let K = null;              // nycklar + topic
+let es = null, lastEvent = 0, connected = false, backoff = 2000, reconnectTimer = null;
+const peers = {};          // id -> {name, status, last, avatar}
+let lastHello = 0, lastAvatarPush = 0, seenPending = null, lastSeenSent = 0;
+const myMsgIds = [], seenBy = {}, myReactions = new Set();
+const files = {};          // id -> {url, size, name, blob, mine}
+let lastSender = null, lastTime = 0, lastRow = null, lastTimeEl = null, stuck = true, lastMsgTime = 0;
+let log, input, roster, menuEl, toastEl, toastTimer, unread = 0;
+
+// ============================================================ krypto (samma som CloudBridge.cs)
+async function deriveKeys(code) {
+  code = code.trim().toLowerCase();
+  const th = await crypto.subtle.digest('SHA-256', utf8('MiniChat-topic-v1:' + code));
+  const topic = 'mc-' + hex(new Uint8Array(th)).slice(0, 24);
+  const base = await crypto.subtle.importKey('raw', utf8(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: utf8('MiniChat-cloud-salt-v1'), iterations: 60000, hash: 'SHA-1' }, base, 256);
+  const kKey = await crypto.subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const encRaw = await crypto.subtle.sign('HMAC', kKey, utf8('MiniChat cloud enc'));
+  const macRaw = await crypto.subtle.sign('HMAC', kKey, utf8('MiniChat cloud mac'));
+  const encKey = await crypto.subtle.importKey('raw', encRaw, { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
+  const macKey = await crypto.subtle.importKey('raw', macRaw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  return { topic, encKey, macKey };
+}
+async function seal(plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, K.encKey, plain));
+  const ivct = concat(iv, ct);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', K.macKey, ivct));
+  return concat(ivct, mac);
+}
+async function unseal(data) {
+  if (data.length < 64) throw new Error('kort');
+  const ivct = data.subarray(0, data.length - 32), mac = data.subarray(data.length - 32);
+  if (!await crypto.subtle.verify('HMAC', K.macKey, mac, ivct)) throw new Error('mac');
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv: ivct.subarray(0, 16) }, K.encKey, ivct.subarray(16)));
+}
+
+// ============================================================ ntfy
+function topicUrl() { return S.server.replace(/\/+$/, '') + '/' + K.topic; }
+function connect() {
+  if (!K) return;
+  if (es) { try { es.close(); } catch (e) { } es = null; }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  const since = S.lastId || '12h';
+  const src = new EventSource(topicUrl() + '/sse?since=' + encodeURIComponent(since));
+  es = src;
+  src.onopen = () => { lastEvent = Date.now(); backoff = 2000; setConnected(true); };
+  src.addEventListener('keepalive', () => { lastEvent = Date.now(); });
+  src.addEventListener('open', () => { lastEvent = Date.now(); });
+  src.onmessage = ev => { lastEvent = Date.now(); try { onNtfy(JSON.parse(ev.data)); } catch (e) { } };
+  src.onerror = () => {
+    if (es !== src) return;
+    try { src.close(); } catch (e) { }
+    es = null;
+    setConnected(false);
+    reconnectTimer = setTimeout(connect, backoff);
+    backoff = Math.min(backoff * 2, 60000);
+  };
+}
+function setConnected(on) {
+  if (on && !connected) { addSystem('☁ Ansluten – ni når varandra via internet'); sendHello(true); pushAvatar(); }
+  connected = on;
+  renderConn();
+}
+const outq = []; let pumping = false;
+function publish(fr) { outq.push(fr); if (outq.length > 200) outq.shift(); pump(); }
+async function pump() {
+  if (pumping) return; pumping = true;
+  while (outq.length) {
+    const fr = outq[0];
+    try {
+      if (fr.length <= MAX_TEXT_FRAME) {
+        const r = await fetch(topicUrl(), { method: 'POST', body: b64(await seal(fr)) });
+        if (r.status === 429) { toast('Molnet: för många meddelanden – väntar en minut'); await sleep(60000); continue; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+      } else {
+        await putAttachment(frame('CBLOB|' + randId()), fr, null);
+      }
+      outq.shift();
+    } catch (e) {
+      await sleep(10000);
+    }
+  }
+  pumping = false;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function putAttachment(headerFrame, data, onProgress) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const boxed = await seal(data);
+      const msg = b64(await seal(headerFrame));
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', topicUrl());
+      xhr.setRequestHeader('Filename', 'm.bin');
+      xhr.setRequestHeader('Message', msg);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded, e.total); };
+      xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve(true) : reject(new Error('HTTP ' + xhr.status));
+      xhr.onerror = () => reject(new Error('nätverksfel'));
+      xhr.send(new Blob([boxed]));
+    } catch (e) { reject(e); }
+  });
+}
+async function download(url, expected, onProgress) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const total = Number(r.headers.get('content-length')) || expected || 0;
+  const reader = r.body.getReader();
+  const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (onProgress) onProgress(got, total);
+  }
+  const all = new Uint8Array(got); let off = 0;
+  for (const c of chunks) { all.set(c, off); off += c.length; }
+  return unseal(all);
+}
+
+// ============================================================ protokoll (samma ramar som Network.cs)
+async function onNtfy(o) {
+  if (o.event !== 'message') return;
+  if (o.id) { S.lastId = o.id; save(); }
+  let fr;
+  try { fr = await unseal(unb64(o.message || '')); } catch (e) { return; }
+  const url = o.attachment && o.attachment.url ? o.attachment.url : null;
+  const size = o.attachment && o.attachment.size ? o.attachment.size : 0;
+  await handleFrame(fr, url, size);
+}
+async function handleFrame(fr, url, size) {
+  const { p, body } = parseFrame(fr);
+  const from = p[2], name = cleanName(p[3]);
+  switch (p[0]) {
+    case 'CHELLO': if (p.length < 4 || p[1] === S.id) return; if (touchPeer(p[1], cleanName(p[2]), p[3])) sendHello(false); return;
+    case 'CBYE': if (p[1] && p[1] !== S.id) { delete peers[p[1]]; renderRoster(); } return;
+    case 'CAVATAR': {
+      if (p.length < 3 || p[1] === S.id) return;
+      touchPeer(p[1], cleanName(p[2]), null);
+      let av = null;
+      if (url) { try { const d = await download(url, size, null); if (d.length <= MAX_AVATAR) av = 'data:image/jpeg;base64,' + b64(d); } catch (e) { } }
+      S.avatars[p[1]] = av || ''; if (!av) delete S.avatars[p[1]]; save();
+      refreshAvatars(); renderRoster(); return;
+    }
+    case 'CBLOB': if (url) { try { await handleFrame(await download(url, size, null), null, 0); } catch (e) { } } return;
+    case 'CFILE': return onCloudFile(p, body, url);
+    case 'MSG': {
+      if (p.length < 5 || !markSeen(p[1])) return;
+      if (from === S.id) return;
+      touchPeer(from, name, null);
+      const m = { id: p[1], from, name, t: ticksToMs(p[4]), mine: false, text: str(body) };
+      showMessage(m, true);
+      onIncoming(m.name, m.text);
+      queueSeen(m.id);
+      return;
+    }
+    case 'SOUND': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); playSound(str(body)); return;
+    case 'SOUNDX': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); playBytes(body, p[5] || '.wav'); return;
+    case 'NUDGE': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); onNudge(name); return;
+    case 'SEEN': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); onSeen(name, p[4]); return;
+    case 'REACT': if (p.length < 6 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); react(p[4], str(body), name, p[5] === '1', true); return;
+  }
+}
+function touchPeer(id, name, status) {
+  if (id === S.id) return false;
+  const now = Date.now();
+  let cp = peers[id];
+  const fresh = !cp || now - cp.last > 10 * 60000;
+  if (!cp) cp = peers[id] = { name: name || 'Okänd', status: 'online', last: now };
+  if (name) cp.name = name;
+  if (status) cp.status = status;
+  cp.last = now;
+  renderRoster();
+  return fresh;
+}
+function alivePeers() { const c = Date.now() - 25 * 60000; return Object.keys(peers).filter(id => peers[id].last > c).map(id => Object.assign({ id }, peers[id])).sort((a, b) => a.name.localeCompare(b.name, 'sv')); }
+function sendHello(force) {
+  if (!K) return;
+  const now = Date.now();
+  if (!force && now - lastHello < 60000) return;
+  lastHello = now;
+  publish(frame('CHELLO|' + S.id + '|' + S.name + '|' + S.status));
+}
+async function pushAvatar() {
+  if (!K || Date.now() - lastAvatarPush < 30 * 60000) return;
+  lastAvatarPush = Date.now();
+  if (!S.avatar) { publish(frame('CAVATAR|' + S.id + '|' + S.name)); return; }
+  try { await putAttachment(frame('CAVATAR|' + S.id + '|' + S.name), unb64(S.avatar.split(',')[1]), null); } catch (e) { }
+}
+function queueSeen(msgId) {
+  seenPending = msgId;
+  if (document.visibilityState === 'visible') flushSeen();
+}
+function flushSeen() {
+  if (!seenPending || !K) return;
+  if (Date.now() - lastSeenSent < 60000) { setTimeout(flushSeen, 60000 - (Date.now() - lastSeenSent) + 50); return; }
+  lastSeenSent = Date.now();
+  const id = randId(); markSeen(id);
+  publish(frame('SEEN|' + id + '|' + S.id + '|' + S.name + '|' + seenPending));
+  seenPending = null;
+}
+
+// ============================================================ skicka
+function sendText(t) {
+  if (!K) return;
+  const sounds = [];
+  let rest = t.replace(/\*(prutt|skratt)\*/gi, (m, s) => { s = s.toLowerCase(); if (!sounds.includes(s)) sounds.push(s); return ' '; });
+  rest = rest.replace(/[ \t]{2,}/g, ' ').trim();
+  for (const s of sounds) { const id = randId(); markSeen(id); publish(frame('SOUND|' + id + '|' + S.id + '|' + S.name, utf8(s))); toast(s === 'prutt' ? '💨 Prutt skickad' : '😂 Skratt skickat'); }
+  if (!rest) return;
+  const m = { id: randId(), from: S.id, name: S.name, t: Date.now(), mine: true, text: rest };
+  markSeen(m.id);
+  publish(frame('MSG|' + m.id + '|' + S.id + '|' + S.name + '|' + nowTicks(), utf8(rest)));
+  showMessage(m, true, alivePeers().length ? null : 'Ligger i molnet – levereras när den andra kommer in');
+}
+function sendNudge() {
+  if (!alivePeers().length) { toast('Ingen annan är online'); return; }
+  const id = randId(); markSeen(id);
+  publish(frame('NUDGE|' + id + '|' + S.id + '|' + S.name));
+  addSystem('Du knackade på 👋');
+  $('app').classList.remove('shaking'); void $('app').offsetWidth; $('app').classList.add('shaking');
+}
+function sendReaction(msgId, emoji) {
+  const key = msgId + '|' + emoji;
+  const on = !myReactions.has(key);
+  if (on) myReactions.add(key); else myReactions.delete(key);
+  const id = randId(); markSeen(id);
+  publish(frame('REACT|' + id + '|' + S.id + '|' + S.name + '|' + msgId + '|' + (on ? '1' : '0'), utf8(emoji)));
+  react(msgId, emoji, S.name, on, true);
+}
+async function sendFiles(list) {
+  if (!alivePeers().length) { toast('Ingen annan är online – filer skickas bara när någon är inne'); return; }
+  for (const f of list) {
+    const id = randId();
+    const rec = { k: 'file', id, from: S.id, name: S.name, t: Date.now(), mine: true, fileName: f.name, size: f.size };
+    addFile(rec); S.history.push(rec); trimHistory();
+    if (f.size > CLOUD_FILE_LIMIT) { fileState(id, true, 0, 'error', f.size, 'För stor för molnet (max 5 MB)'); continue; }
+    if (/^image\//.test(f.type)) { try { const th = await makeThumb(f); rec.thumb = th; save(); fileThumb(id, th); } catch (e) { } }
+    files[id] = { blob: f, name: f.name, mine: true };
+    try {
+      const data = new Uint8Array(await f.arrayBuffer());
+      fileState(id, true, 0, 'active', f.size, 'Skickar 0 %');
+      await putAttachment(frame('CFILE|' + id + '|' + S.id + '|' + S.name + '|' + f.size, utf8(f.name)), data,
+        (done, total) => fileState(id, true, Math.round(done * 100 / total), 'active', f.size, 'Skickar ' + Math.round(done * 100 / total) + ' %'));
+      fileState(id, true, 100, 'done', f.size, 'Skickad');
+    } catch (e) { fileState(id, true, 0, 'error', f.size, 'Kunde inte skicka: ' + e.message); }
+  }
+}
+async function onCloudFile(p, body, url) {
+  if (p.length < 5 || !url || p[2] === S.id || files[p[1]]) return;
+  const size = Number(p[4]) || 0, id = p[1], name = cleanName(p[3]), fileName = str(body) || 'fil';
+  touchPeer(p[2], name, null);
+  const rec = { k: 'file', id, from: p[2], name, t: Date.now(), mine: false, fileName, size };
+  files[id] = { url, size, name: fileName, mine: false };
+  addFile(rec); S.history.push(rec); trimHistory();
+  onIncoming(name, 'Skickar filen ' + fileName);
+  fileState(id, false, 0, 'active', size, 'Hämtar 0 %');
+  try {
+    const data = await download(url, size, (done, total) => fileState(id, false, Math.round(done * 100 / Math.max(1, total)), 'active', size, 'Hämtar ' + Math.round(done * 100 / Math.max(1, total)) + ' %'));
+    const blob = new Blob([data], { type: mimeFor(fileName) });
+    files[id].blob = blob;
+    if (/^image\//.test(blob.type)) { try { const th = await makeThumb(blob); rec.thumb = th; save(); fileThumb(id, th); } catch (e) { } }
+    fileState(id, false, 100, 'done', size, 'Mottagen');
+  } catch (e) { fileState(id, false, 0, 'error', size, 'Kunde inte hämta: ' + e.message); }
+}
+function mimeFor(n) { const e = (n.split('.').pop() || '').toLowerCase(); return { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', pdf: 'application/pdf', mp4: 'video/mp4', mov: 'video/quicktime', mp3: 'audio/mpeg', wav: 'audio/wav', txt: 'text/plain' }[e] || 'application/octet-stream'; }
+function makeThumb(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const u = URL.createObjectURL(blob);
+    img.onload = () => {
+      const k = Math.min(1, 420 / img.width, 420 / img.height);
+      const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(u);
+      resolve(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(u); reject(new Error('bild')); };
+    img.src = u;
+  });
+}
+function openFile(id) {
+  const f = files[id];
+  if (!f || !f.blob) { toast('Filen finns inte kvar – den fanns bara under den här sessionen'); return; }
+  const u = URL.createObjectURL(f.blob);
+  const a = document.createElement('a'); a.href = u; a.download = f.name; a.target = '_blank'; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(u), 60000);
+}
+
+// ============================================================ ljud & uppmärksamhet
+let AC = null; const buffers = {};
+function unlockAudio() { try { const first = !AC; if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); if (first) preloadSounds(); } catch (e) { } }
+function decode(buf) { return new Promise((res, rej) => { try { AC.decodeAudioData(buf, res, rej); } catch (e) { rej(e); } }); }
+async function playBuffer(name, bytes) {
+  unlockAudio(); if (!AC) return;
+  try {
+    let b = buffers[name];
+    if (!b) { b = await decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)); if (name) buffers[name] = b; }
+    const src = AC.createBufferSource(); src.buffer = b; src.connect(AC.destination); src.start();
+  } catch (e) { }
+}
+async function playSound(name) {
+  unlockAudio(); if (!AC || !SOUND_URLS[name]) return;
+  try {
+    let b = buffers[name];
+    if (!b) { const r = await fetch(SOUND_URLS[name]); if (!r.ok) return; b = await decode(await r.arrayBuffer()); buffers[name] = b; }
+    const src = AC.createBufferSource(); src.buffer = b; src.connect(AC.destination); src.start();
+  } catch (e) { }
+}
+async function preloadSounds() { if (!AC) return; for (const n of Object.keys(SOUND_URLS)) { if (buffers[n]) continue; try { const r = await fetch(SOUND_URLS[n]); if (r.ok) buffers[n] = await decode(await r.arrayBuffer()); } catch (e) { } } }
+function playBytes(bytes) { playBuffer(null, bytes); }
+function onIncoming(name, body) {
+  if (document.visibilityState !== 'visible') { unread++; document.title = '(' + unread + ') MiniChat'; }
+  if (S.status === 'busy') return;
+  if (S.sound) playSound('ding');
+  if (S.notify && document.visibilityState !== 'visible' && window.Notification && Notification.permission === 'granted') {
+    try { new Notification(name, { body: body.slice(0, 160) }); } catch (e) { }
+  }
+}
+function onNudge(name) {
+  addSystem(name + ' knackade på dig 👋');
+  playSound('knock');
+  $('flash').classList.remove('on'); void $('flash').offsetWidth; $('flash').classList.add('on');
+  $('app').classList.remove('shaking'); void $('app').offsetWidth; $('app').classList.add('shaking');
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+}
+
+// ============================================================ UI: rendering av loggen
+const colors = ['#D9534F', '#9B59B6', '#1ABC9C', '#E67E22', '#2ECC71', '#34495E', '#C9A227', '#3498DB'];
+function colorFor(n) { let h = 0; for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) & 0x7fffffff; return colors[h % colors.length]; }
+function initial(n) { if (!n) return '?'; const cp = n.codePointAt(0); return String.fromCodePoint(cp).toUpperCase(); }
+function fillAv(e, id, name, url) {
+  url = url || S.avatars[id];
+  e.style.backgroundImage = ''; e.textContent = '';
+  if (url) { e.style.backgroundImage = `url("${url}")`; e.style.backgroundColor = '#DCE3EC'; }
+  else { e.style.backgroundColor = colorFor(name || '?'); e.textContent = initial(name); }
+}
+function makeAv(id, name, cls) { const d = el('div', 'av' + (cls ? ' ' + cls : '')); d.dataset.id = id; d.dataset.name = name || ''; fillAv(d, id, name); return d; }
+function refreshAvatars() { document.querySelectorAll('.av[data-id]').forEach(e => fillAv(e, e.dataset.id, e.dataset.name)); }
+const urlRe = /(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/ig;
+function renderText(c, s) {
+  let last = 0, m; urlRe.lastIndex = 0;
+  while ((m = urlRe.exec(s)) !== null) {
+    if (m.index > last) text(c, s.substring(last, m.index));
+    const a = el('a'); a.href = m[0].indexOf('://') > 0 ? m[0] : 'http://' + m[0]; a.target = '_blank'; a.rel = 'noopener'; text(a, m[0]); c.appendChild(a);
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) text(c, s.substring(last));
+}
+function timeLabel(t) {
+  const d = new Date(t), now = new Date();
+  const hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  if (d.toDateString() === now.toDateString()) return 'Idag ' + hm;
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Igår ' + hm;
+  return d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'long' }) + ' ' + hm;
+}
+function beginRow(m) {
+  const showTime = !lastMsgTime || m.t - lastMsgTime > 10 * 60000;
+  if (m.t > lastMsgTime) lastMsgTime = m.t;
+  if (showTime) { const sep = el('div', 'sep'); sep.appendChild(text(el('span'), timeLabel(m.t))); log.appendChild(sep); lastSender = null; }
+  const sender = m.mine ? S.id : m.from;
+  const cont = lastSender === sender && lastRow && (m.t - lastTime) < 150000;
+  if (cont) {
+    lastRow.classList.remove('last');
+    const slot = lastRow.querySelector('.avslot'); if (slot) slot.textContent = '';
+    if (lastTimeEl && lastTimeEl.parentNode) lastTimeEl.parentNode.removeChild(lastTimeEl);
+  } else if (!m.mine) log.appendChild(text(el('div', 'gname'), m.name));
+  const row = el('div', 'msg ' + (m.mine ? 'me' : 'them') + ' last' + (cont ? '' : ' first'));
+  row.id = 'r_' + m.id;
+  if (!m.mine) { const slot = el('div', 'avslot'); slot.appendChild(makeAv(m.from, m.name)); row.appendChild(slot); }
+  lastSender = sender; lastTime = m.t; lastRow = row;
+  return row;
+}
+function endRow(row, m) {
+  log.appendChild(row);
+  attachReactBar(row, m.id);
+  const d = new Date(m.t);
+  const t = text(el('div', 'time' + (m.mine ? ' me' : '')), ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2));
+  log.appendChild(t); lastTimeEl = t;
+  if (S.reactions[m.id]) renderReactions(m.id);
+  scrollDown(m.mine);
+}
+function scrollDown(force) { if (force || stuck) log.scrollTop = log.scrollHeight; }
+function showMessage(m, record, status) {
+  const row = beginRow(m);
+  const b = el('div', 'bubble'); renderText(b, m.text);
+  if (status) { const st = el('div', 'st'); st.id = 's_' + m.id; text(st, status); b.appendChild(st); }
+  row.appendChild(b); endRow(row, m);
+  if (m.mine) myMsgIds.push(m.id);
+  if (record) { S.history.push({ k: 'msg', id: m.id, from: m.from, name: m.name, t: m.t, mine: m.mine, text: m.text }); trimHistory(); }
+}
+function trimHistory() { const c = Date.now() - 30 * 86400000; S.history = S.history.filter(r => r.t > c); if (S.history.length > 600) S.history.splice(0, S.history.length - 600); save(); }
+function iconFor(n) { const e = (n.split('.').pop() || '').toLowerCase(); if (/^(jpe?g|png|gif|bmp|webp|heic|svg|tiff?)$/.test(e)) return I.image; if (/^(mp4|mov|mkv|avi|webm|m4v)$/.test(e)) return I.movie; if (/^(mp3|wav|m4a|flac|ogg|aac)$/.test(e)) return I.music; if (/^(zip|rar|7z|tar|gz)$/.test(e)) return I.zip; return I.file; }
+function addFile(r) {
+  const row = beginRow(r);
+  const b = el('div', 'bubble'); const f = el('div', 'file');
+  const ic = el('div', 'fic'); ic.innerHTML = svg(iconFor(r.fileName));
+  const body = el('div', 'fbody');
+  const fn = el('div', 'fn'); fn.title = r.fileName; text(fn, r.fileName);
+  const fm = el('div', 'fm'); fm.id = 'fm_' + r.id; text(fm, sizeText(r.size));
+  const bar = el('div', 'bar'); const fill = el('i'); fill.id = 'fill_' + r.id; bar.appendChild(fill); bar.id = 'bar_' + r.id; bar.style.display = 'none';
+  const acts = el('div', 'facts'); acts.id = 'acts_' + r.id;
+  body.append(fn, fm, bar, acts); f.append(ic, body); b.appendChild(f); row.appendChild(b);
+  endRow(row, r);
+  if (r.thumb) fileThumb(r.id, r.thumb);
+  if (r.mine) myMsgIds.push(r.id);
+}
+function fileState(id, mine, pct, state, size, msg) {
+  const fm = $('fm_' + id), fill = $('fill_' + id), acts = $('acts_' + id), bar = $('bar_' + id);
+  if (!fm) return;
+  fm.textContent = sizeText(size) + (msg ? ' · ' + msg : '');
+  fill.style.width = pct + '%'; bar.style.display = state === 'active' ? '' : 'none';
+  acts.textContent = '';
+  if (state === 'done' && files[id] && files[id].blob) { const a = el('a'); text(a, mine ? 'Visa' : 'Öppna / spara'); a.onclick = e => { e.preventDefault(); openFile(id); }; acts.appendChild(a); }
+  scrollDown(false);
+}
+function fileThumb(id, url) {
+  const row = $('r_' + id); if (!row) return;
+  const b = row.querySelector('.bubble'); if (!b || b.classList.contains('img')) return;
+  b.classList.add('img');
+  const img = document.createElement('img'); img.className = 'thumb'; img.src = url;
+  img.onclick = () => { if (files[id] && files[id].blob) openFile(id); else window.open(url, '_blank'); };
+  img.onload = () => scrollDown(false);
+  b.insertBefore(img, b.firstChild);
+}
+function addSystem(s) { if (!log) return; log.appendChild(text(el('div', 'sys'), s)); lastSender = null; scrollDown(false); }
+function onSeen(name, msgId) {
+  const idx = myMsgIds.indexOf(msgId); if (idx < 0) return;
+  if (seenBy[name] !== undefined && seenBy[name] >= idx) return;
+  seenBy[name] = idx;
+  const best = Math.max(...Object.values(seenBy));
+  const names = Object.keys(seenBy).filter(n => seenBy[n] >= best).sort();
+  const txt = alivePeers().length <= 1 ? 'Sett' : 'Sett av ' + names.join(', ');
+  document.querySelectorAll('.seenlbl').forEach(e => e.remove());
+  const row = $('r_' + myMsgIds[best]); if (!row) return;
+  const b = row.querySelector('.bubble'); if (!b) return;
+  b.appendChild(text(el('div', 'st seenlbl'), '✓ ' + txt));
+  scrollDown(false);
+}
+function attachReactBar(row, id) {
+  const b = row.querySelector('.bubble'); if (!b) return;
+  const bar = el('div', 'rbar');
+  for (const e of EMOJIS) { const sp = text(el('span'), e); sp.onclick = ev => { ev.stopPropagation(); sendReaction(id, e); b.classList.remove('show'); }; bar.appendChild(sp); }
+  b.appendChild(bar);
+  let timer = null;
+  b.addEventListener('touchstart', () => { timer = setTimeout(() => { document.querySelectorAll('.bubble.show').forEach(x => x.classList.remove('show')); b.classList.add('show'); if (navigator.vibrate) navigator.vibrate(10); }, 450); }, { passive: true });
+  const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  b.addEventListener('touchend', cancel, { passive: true }); b.addEventListener('touchmove', cancel, { passive: true }); b.addEventListener('touchcancel', cancel, { passive: true });
+}
+function react(id, emoji, name, on, record) {
+  const r = S.reactions[id] || (S.reactions[id] = {});
+  const who = r[emoji] || (r[emoji] = []);
+  const i = who.indexOf(name);
+  if (on && i < 0) who.push(name); if (!on && i >= 0) who.splice(i, 1);
+  if (!who.length) delete r[emoji];
+  if (!Object.keys(r).length) delete S.reactions[id];
+  if (record) save();
+  renderReactions(id);
+}
+function renderReactions(id) {
+  const row = $('r_' + id); if (!row) return;
+  const b = row.querySelector('.bubble'); if (!b) return;
+  b.querySelectorAll('.rx').forEach(e => e.remove());
+  const r = S.reactions[id]; const keys = r ? Object.keys(r) : [];
+  row.classList.toggle('has-rx', keys.length > 0);
+  if (!keys.length) return;
+  const rx = el('div', 'rx');
+  for (const k of keys) { const sp = text(el('span', r[k].includes(S.name) ? 'mine' : ''), k + (r[k].length > 1 ? ' ' + r[k].length : '')); sp.title = r[k].join(', '); rx.appendChild(sp); }
+  b.appendChild(rx);
+}
+
+// ============================================================ UI: header, roster, meny, modaler
+function renderMe() {
+  $('meName').textContent = S.name || 'MiniChat';
+  fillAv($('meAv'), S.id, S.name, S.avatar);
+  $('meDot').className = 'status ' + S.status;
+  $('meSub').textContent = STATUS_TEXT[S.status] + ' · krypterat · via molnet';
+}
+function renderRoster() {
+  if (!roster) return;
+  const list = alivePeers();
+  roster.textContent = '';
+  if (!list.length) { roster.appendChild(el('span', 'pulse')); text(roster, 'Ingen annan är inne just nu'); }
+  else {
+    roster.appendChild(text(el('span', 'lbl'), 'Inne nu'));
+    for (const p of list) { const c = el('span', 'chip'); c.appendChild(makeAv(p.id, p.name, 'sm')); text(c, p.name); c.appendChild(el('span', 'dot ' + (p.status || 'online'))); c.title = STATUS_TEXT[p.status] || ''; roster.appendChild(c); }
+  }
+  renderConn();
+}
+function renderConn() { let c = roster.querySelector('.conn'); if (!c) { c = el('span', 'conn'); roster.appendChild(c); } c.className = 'conn' + (connected ? ' ok' : ''); c.textContent = connected ? '☁ ansluten' : '☁ ansluter…'; }
+function toast(s) { toastEl.textContent = s; toastEl.className = 'show'; if (toastTimer) clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.className = '', 2600); }
+function toggleMenu() { if (menuEl.classList.contains('hidden')) { renderMenu(); menuEl.classList.remove('hidden'); } else closeMenu(); }
+function closeMenu() { menuEl.classList.add('hidden'); }
+function renderMenu() {
+  menuEl.textContent = '';
+  const inf = el('div', 'minfo'); inf.appendChild(text(el('b'), S.name));
+  const c = text(el('div', connected ? 'ok' : ''), 'Molnbrygga: ' + (connected ? 'ansluten' : 'ansluter…')); inf.appendChild(c);
+  menuEl.appendChild(inf);
+  const seg = el('div', 'seg');
+  const o1 = text(el('div', 'online' + (S.status === 'online' ? ' on' : '')), 'Tillgänglig');
+  const o2 = text(el('div', 'busy' + (S.status === 'busy' ? ' on' : '')), 'Upptagen');
+  o1.onclick = () => setStatus('online'); o2.onclick = () => setStatus('busy');
+  seg.append(o1, o2); menuEl.appendChild(seg);
+  sep();
+  item(I.edit, 'Byt namn…', () => ask('Byt namn', 'Namnet visas för de du chattar med.', S.name, 'Ditt namn', v => { S.name = cleanName(v); save(); renderMe(); sendHello(true); }));
+  item(I.photo, 'Välj profilbild…', () => $('avpick').click());
+  item(I.close, 'Ta bort profilbild', () => { S.avatar = ''; save(); renderMe(); lastAvatarPush = 0; pushAvatar(); }, !S.avatar);
+  sep();
+  item(I.key, 'Familjekod…', () => ask('Familjekod', 'Samma kod på alla era datorer och telefoner. Byter du kod startar chatten om med den nya.', S.code, 'familjekod', v => { setCode(v); }));
+  item(I.cloud, 'Molnserver…', () => ask('Molnserver', 'Adressen till ntfy-servern. Standard är https://ntfy.sh.', S.server, 'https://ntfy.sh', v => { S.server = v || 'https://ntfy.sh'; save(); connect(); }, true));
+  sep();
+  toggle(I.volume, 'Ljud vid nytt meddelande', 'sound');
+  toggle(I.bell, 'Aviseringar (när det går)', 'notify');
+  sep();
+  item(I.clear, 'Rensa chatten och historiken', () => { S.history = []; S.reactions = {}; save(); log.textContent = ''; lastSender = null; lastRow = null; lastMsgTime = 0; });
+  item(I.info, 'Så funkar det', showHelp);
+  function sep() { menuEl.appendChild(el('div', 'msep')); }
+  function item(icon, label, fn, disabled) { const d = el('div', 'mi' + (disabled ? ' dis' : '')); d.innerHTML = svg(icon); d.appendChild(text(el('span', 'lab'), label)); if (!disabled) d.onclick = e => { e.stopPropagation(); closeMenu(); fn(); }; else d.style.opacity = .45; menuEl.appendChild(d); }
+  function toggle(icon, label, key) { const d = el('div', 'mi'); d.innerHTML = svg(icon); d.appendChild(text(el('span', 'lab'), label)); const sw = el('div', 'sw' + (S[key] ? ' on' : '')); sw.appendChild(el('i')); d.appendChild(sw); d.onclick = e => { e.stopPropagation(); S[key] = !S[key]; save(); sw.className = 'sw' + (S[key] ? ' on' : ''); if (key === 'sound' && S.sound) playSound('ding'); if (key === 'notify' && S.notify && window.Notification && Notification.permission === 'default') Notification.requestPermission(); }; menuEl.appendChild(d); }
+}
+function setStatus(s) { S.status = s; save(); renderMe(); closeMenu(); lastHello = 0; sendHello(true); toast(s === 'busy' ? 'Du är nu upptagen – inga ljud' : 'Du är nu tillgänglig'); }
+function closeModal() { $('modal').classList.add('hidden'); }
+function ask(title, desc, value, placeholder, cb, allowEmpty) {
+  const card = $('mcard'); card.textContent = '';
+  card.appendChild(text(el('h3'), title)); card.appendChild(text(el('p'), desc));
+  const inp = el('input', 'inp'); inp.value = value || ''; inp.placeholder = placeholder || ''; inp.maxLength = 120; inp.autocapitalize = 'none';
+  card.appendChild(inp);
+  const btns = el('div', 'btns');
+  const cancel = text(el('button', 'btn gho'), 'Avbryt'); cancel.onclick = closeModal;
+  const ok = text(el('button', 'btn pri'), 'OK');
+  ok.onclick = () => { const v = inp.value.trim(); if (!v && !allowEmpty) { inp.focus(); return; } closeModal(); cb(v); };
+  inp.onkeydown = e => { if (e.key === 'Enter') { ok.onclick(); } if (e.key === 'Escape') closeModal(); };
+  btns.append(cancel, ok); card.appendChild(btns);
+  $('modal').classList.remove('hidden');
+  setTimeout(() => { inp.focus(); inp.select(); }, 30);
+}
+function showHelp() {
+  const card = $('mcard'); card.textContent = '';
+  card.appendChild(text(el('h3'), 'Så funkar MiniChat'));
+  const h = el('div', 'help');
+  h.innerHTML = '<p>Webbversionen pratar med samma molnbrygga som MiniChat på datorn: samma familjekod, samma kryptering. Allt krypteras i din telefon innan det skickas; servern ser bara oläsliga paket.</p><ul>' +
+    '<li><b>Hemskärm:</b> Dela → <i>Lägg till på hemskärmen</i> i Safari så blir det en egen app.</li>' +
+    '<li><b>Ljud:</b> skriv <b>*prutt*</b> eller <b>*skratt*</b> så spelas ljudet hos de andra. Ljud på telefonen kräver att du tryckt någonstans i appen först.</li>' +
+    '<li><b>Reaktioner:</b> håll fingret på en bubbla.</li>' +
+    '<li><b>Knacka:</b> klockan uppe till höger. Hos de andra skakar fönstret.</li>' +
+    '<li><b>Offline:</b> meddelanden som skickas när du inte är inne ligger kvar hos servern i 12 timmar och hämtas när du öppnar appen. Filer finns i 3 timmar.</li>' +
+    '<li><b>Notiser:</b> iPhone stänger webbappar i bakgrunden, så nya meddelanden syns när du öppnar appen. Vill du ha pling: installera appen <i>ntfy</i> och be om pushalternativet i MiniChat.</li>' +
+    '</ul>';
+  card.appendChild(h);
+  const btns = el('div', 'btns'); const ok = text(el('button', 'btn pri'), 'Stäng'); ok.onclick = closeModal; btns.appendChild(ok); card.appendChild(btns);
+  $('modal').classList.remove('hidden');
+}
+
+// ============================================================ start
+async function setCode(code) {
+  code = (code || '').trim().toLowerCase();
+  if (!code) return;
+  S.code = code; S.lastId = ''; S.history = []; S.reactions = {}; S.seen = []; seenSet.clear();
+  for (const k of Object.keys(peers)) delete peers[k];
+  save();
+  log.textContent = ''; lastSender = null; lastRow = null; lastMsgTime = 0;
+  await start();
+}
+async function start() {
+  K = await deriveKeys(S.code);
+  renderMe(); renderRoster();
+  addSystem('Du är inne som ' + S.name + '. Allt som skickas är krypterat.');
+  connect();
+}
+function replayHistory() {
+  for (const r of S.history) {
+    if (r.k === 'msg') showMessage(r, false, null);
+    else if (r.k === 'file') { addFile(r); fileState(r.id, r.mine, 100, 'done', r.size, r.mine ? 'Skickad' : 'Mottagen'); }
+  }
+  if (S.history.length) addSystem('— äldre meddelanden ovan —');
+}
+function autosize() { input.style.height = '40px'; const h = Math.min(input.scrollHeight, 132); if (h > 40) input.style.height = h + 'px'; layout(); }
+function layout() { const c = $('composer'); if (c && log) { log.style.bottom = c.offsetHeight + 'px'; if (stuck) log.scrollTop = log.scrollHeight; } }
+function updateSend() { $('sendBtn').className = input.value.trim() ? 'send' : 'send off'; }
+function sendNow() { const t = input.value; if (!t.trim()) return; unlockAudio(); sendText(t); input.value = ''; autosize(); updateSend(); }
+function showApp(welcome) { $('welcome').classList.toggle('hidden', !welcome); $('app').classList.toggle('hidden', welcome); if (welcome) setTimeout(() => $('wname').focus(), 50); else layout(); }
+
+function init() {
+  load();
+  log = $('log'); input = $('input'); roster = $('roster'); menuEl = $('menu'); toastEl = $('toast');
+  for (const id of S.seen) seenSet.add(id);
+  $('gearBtn').innerHTML = svg(I.gear); $('nudgeBtn').innerHTML = svg(I.nudge); $('attachBtn').innerHTML = svg(I.attach); $('sendBtn').innerHTML = svg(I.send); $('wlogo').innerHTML = svg(I.chat);
+  $('gearBtn').onclick = e => { e.stopPropagation(); toggleMenu(); };
+  $('nudgeBtn').onclick = () => { unlockAudio(); sendNudge(); };
+  $('attachBtn').onclick = () => $('filepick').click();
+  $('filepick').onchange = e => { unlockAudio(); sendFiles(Array.from(e.target.files)); e.target.value = ''; };
+  $('avpick').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const th = await makeAvatarData(f); S.avatar = th; save(); renderMe(); lastAvatarPush = 0; pushAvatar(); } catch (x) { toast('Kunde inte läsa bilden'); } };
+  $('meAvWrap').onclick = () => $('avpick').click();
+  $('sendBtn').onclick = sendNow;
+  $('wbtn').onclick = finishWelcome;
+  $('wname').onkeydown = e => { if (e.key === 'Enter') $('wcode').focus(); };
+  $('wcode').onkeydown = e => { if (e.key === 'Enter') finishWelcome(); };
+  $('mbd').onclick = closeModal;
+  input.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendNow(); } };
+  input.oninput = () => { autosize(); updateSend(); };
+  input.onfocus = () => { $('pill').className = 'pill focus'; unlockAudio(); };
+  input.onblur = () => { $('pill').className = 'pill'; };
+  log.onscroll = () => { stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 48; };
+  document.addEventListener('click', e => { if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target) && !$('gearBtn').contains(e.target)) closeMenu(); if (!e.target.closest('.bubble')) document.querySelectorAll('.bubble.show').forEach(x => x.classList.remove('show')); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); closeModal(); } });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') { unread = 0; document.title = 'MiniChat'; if (!es || Date.now() - lastEvent > 90000) connect(); flushSeen(); sendHello(false); }
+  });
+  window.addEventListener('focus', () => { unread = 0; document.title = 'MiniChat'; });
+  if (window.visualViewport) { const vv = window.visualViewport; const fit = () => { $('app').style.height = vv.height + 'px'; layout(); }; vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
+  setInterval(() => { renderRoster(); if (K) { sendHello(Date.now() - lastHello > 20 * 60000); if (es && Date.now() - lastEvent > 120000 && document.visibilityState === 'visible') connect(); } }, 60000);
+  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) { } }
+
+  if (S.name && S.code) { showApp(false); renderMe(); replayHistory(); start(); }
+  else showApp(true);
+}
+function finishWelcome() {
+  const n = $('wname').value.trim(), c = $('wcode').value.trim();
+  if (!n) { $('wname').focus(); return; }
+  if (!c) { $('wcode').focus(); return; }
+  S.name = cleanName(n); save();
+  showApp(false); renderMe();
+  setCode(c);
+}
+function makeAvatarData(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => { const s = Math.min(img.width, img.height); const c = document.createElement('canvas'); c.width = c.height = 96; c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 96, 96); URL.revokeObjectURL(u); resolve(c.toDataURL('image/jpeg', 0.85)); };
+    img.onerror = () => { URL.revokeObjectURL(u); reject(new Error('bild')); };
+    img.src = u;
+  });
+}
+init();
+</script>
+</body>
+</html>
