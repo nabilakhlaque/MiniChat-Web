@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Alternativ 2 för att bygga: Visual Studio 2019/2022 eller .NET SDK:
+        dotnet build -c Release
+    Resultat: bin\Release\net48\MiniChat.exe (en enda fil + en liten .config)
+    Alternativ 1 (ingen SDK alls) är build.cmd i samma mapp.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>MiniChat</AssemblyName>
+    <RootNamespace>MiniChat</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <LangVersion>5</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" LogicalName="MiniChat.app.ico" />
+    <EmbeddedResource Include="alert.ico" LogicalName="MiniChat.alert.ico" />
+    <EmbeddedResource Include="ding.wav" LogicalName="MiniChat.ding.wav" />
+    <EmbeddedResource Include="app.html" LogicalName="MiniChat.app.html" />
+    <EmbeddedResource Include="prutt.wav" LogicalName="MiniChat.prutt.wav" />
+    <EmbeddedResource Include="skratt.wav" LogicalName="MiniChat.skratt.wav" />
+    <EmbeddedResource Include="knock.wav" LogicalName="MiniChat.knock.wav" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Security" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+</Project>
