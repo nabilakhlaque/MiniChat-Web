@@ -20,6 +20,8 @@ namespace MiniChat
         public List<string> Manual = new List<string>();
         public string CloudCode = "";                        // familjekod för molnbryggan (tom = av)
         public string CloudServer = CloudBridge.DefaultServer;
+        public bool PrintEnabled = false;                    // skriv ut PDF:er som andra skickar för utskrift
+        public string PrinterName = "";                      // tom = Windows standardskrivare
 
         public static string Folder
         {
@@ -59,6 +61,8 @@ namespace MiniChat
                             break;
                         case "cloudcode": s.CloudCode = v; break;
                         case "cloudserver": if (v.Length > 0) s.CloudServer = v; break;
+                        case "print": s.PrintEnabled = v == "1"; break;
+                        case "printer": s.PrinterName = v; break;
                     }
                 }
             }
@@ -83,7 +87,9 @@ namespace MiniChat
                     "port=" + Port,
                     "manual=" + string.Join(";", Manual.ToArray()),
                     "cloudcode=" + CloudCode,
-                    "cloudserver=" + CloudServer
+                    "cloudserver=" + CloudServer,
+                    "print=" + (PrintEnabled ? "1" : "0"),
+                    "printer=" + PrinterName
                 });
             }
             catch { }

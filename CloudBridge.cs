@@ -37,14 +37,34 @@ namespace MiniChat
         HttpWebRequest _subReq;
         string _lastId;
         string _lastError = "";
+        DateTime _pauseUntil = DateTime.MinValue;   // skicka inget förrän då (efter 429/fel)
+        int _fails;
+        bool _quotaWarned;
 
         /// <summary>(ram, bilage-url eller null, bilagans storlek)</summary>
-        public event Action<byte[], string, long> Received;
+        /// <summary>Ram, bilage-URL, bilagestorlek och serverns tidsstämpel för meddelandet (UTC).</summary>
+        public event Action<byte[], string, long, DateTime> Received;
         /// <summary>(ansluten?, meddelande)</summary>
         public event Action<bool, string> StateChanged;
 
         public bool Connected { get { return _connected; } }
         public string Topic { get { return _topic; } }
+
+        /// <summary>Kort lägesbeskrivning för menyn.</summary>
+        public string StatusText
+        {
+            get
+            {
+                if (_pauseUntil > DateTime.UtcNow)
+                    return "pausad till " + _pauseUntil.ToLocalTime().ToString("HH:mm") + " – servern bromsar (" + Pending + " i kö)";
+                if (!_connected) return "ansluter…" + (_lastError.Length > 0 ? " (" + Short(_lastError) + ")" : "");
+                string mode = _polling ? "ansluten (hämtar var 45:e sekund)" : "ansluten";
+                return Pending > 0 ? mode + ", " + Pending + " i kö" : mode;
+            }
+        }
+        volatile bool _polling;
+        int Pending { get { lock (_lock) return _outbox.Count; } }
+        static string Short(string s) { return s.Length > 60 ? s.Substring(0, 57) + "…" : s; }
 
         public CloudBridge(string server, string familyCode)
         {
@@ -99,10 +119,25 @@ namespace MiniChat
         {
             lock (_lock)
             {
+                // Närvaro och läskvitton behöver bara finnas en gång i kön – byt ut äldre
+                string kind = Kind(frame);
+                if (kind == "CHELLO" || kind == "SEEN" || kind == "CAVATAR")
+                {
+                    byte[][] all = _outbox.ToArray();
+                    _outbox.Clear();
+                    foreach (byte[] f in all) if (Kind(f) != kind) _outbox.Enqueue(f);
+                }
                 _outbox.Enqueue(frame);
                 while (_outbox.Count > 200) _outbox.Dequeue();
                 Monitor.PulseAll(_lock);
             }
+        }
+
+        static string Kind(byte[] frame)
+        {
+            int n = Math.Min(frame.Length, 12);
+            for (int i = 0; i < n; i++) if (frame[i] == (byte)'|' || frame[i] == 10) return Utf8.GetString(frame, 0, i);
+            return "";
         }
 
         void PublishLoop()
@@ -117,8 +152,16 @@ namespace MiniChat
                 }
                 if (frame == null) continue;
 
-                int wait = 0;
-                bool ok = false;
+                // Paus efter fel gäller oavsett hur många nya ramar som kommer in – annars äter
+                // försöken upp hela kvoten och servern fortsätter säga nej.
+                if (_pauseUntil > DateTime.UtcNow)
+                {
+                    Thread.Sleep((int)Math.Min(5000, Math.Max(200, (_pauseUntil - DateTime.UtcNow).TotalMilliseconds + 50)));
+                    continue;
+                }
+
+                bool ok = false, drop = false, daily = false;
+                int status = 0;
                 try
                 {
                     if (frame.Length <= MaxTextFrame) ok = PostText(Convert.ToBase64String(Crypto.Seal(_enc, _mac, frame)));
@@ -127,23 +170,83 @@ namespace MiniChat
                 catch (WebException ex)
                 {
                     HttpWebResponse r = ex.Response as HttpWebResponse;
-                    int code = r != null ? (int)r.StatusCode : 0;
-                    if (code == 429) { wait = 60000; SetState(_connected, "Molnbryggan: för många meddelanden – väntar en minut"); }
-                    else if (code == 413) { ok = true; SetState(_connected, "Molnbryggan: meddelandet var för stort och hoppades över"); }
-                    else wait = 15000;
-                    _lastError = ex.Message;
+                    status = r != null ? (int)r.StatusCode : -1;
+                    string detail = r != null ? ServerError(r) : null;
+                    _lastError = (status > 0 ? "HTTP " + status : ex.Message) + (detail != null ? " (" + detail + ")" : "");
+                    if (status == 413 || status == 400) drop = true; // för stort / ogiltigt – ingen idé att försöka igen
+                    if (status == 429 && detail != null && (detail.IndexOf("daily", StringComparison.OrdinalIgnoreCase) >= 0 || detail.IndexOf("quota", StringComparison.OrdinalIgnoreCase) >= 0)) daily = true;
                 }
-                catch (Exception ex) { wait = 15000; _lastError = ex.Message; }
+                catch (Exception ex) { status = -1; _lastError = ex.Message; }
 
-                if (ok)
+                if (ok || drop)
                 {
                     lock (_lock) if (_outbox.Count > 0 && _outbox.Peek() == frame) _outbox.Dequeue();
+                    if (drop) { Log("släppte " + Kind(frame) + " (" + _lastError + ")"); SetState(_connected, "Molnbryggan: ett meddelande var för stort och hoppades över"); }
+                    if (ok && _fails > 0) Log("skickar igen efter " + _fails + " fel");
+                    if (ok) Log("skickade " + Kind(frame) + (frame.Length > MaxTextFrame ? " som bilaga" : "") + " (" + frame.Length + " B)");
+                    if (ok && _quotaWarned) { _quotaWarned = false; SetState(_connected, "Molnbryggan skickar igen"); }
+                    _fails = 0;
+                    continue;
                 }
-                else if (wait > 0)
+
+                _fails++;
+                int wait;
+                if (daily)
                 {
-                    lock (_lock) Monitor.Wait(_lock, wait);
+                    // Dagskvoten är slut – den fylls på vid midnatt UTC. Prova igen då, dock minst var 30:e minut
+                    // ifall servern räknar annorlunda. Innan dess är varje försök bortkastat.
+                    DateTime reset = DateTime.UtcNow.Date.AddDays(1).AddMinutes(1);
+                    wait = (int)Math.Min(30 * 60000, Math.Max(60000, (reset - DateTime.UtcNow).TotalMilliseconds));
+                }
+                else if (status == 429) wait = (int)Math.Min(600000, 60000L * (1 << Math.Min(_fails - 1, 3)));   // 1, 2, 4, 8, 10, 10… minuter
+                else wait = Math.Min(120000, 10000 * _fails);                                                      // nät-/serverfel: 10 s, 20 s … 2 min
+                _pauseUntil = DateTime.UtcNow.AddMilliseconds(wait);
+                Log("fel vid sändning: " + _lastError + " – pausar " + (wait / 1000) + " s, " + Pending + " i kö");
+                if (status == 429 && !_quotaWarned)
+                {
+                    _quotaWarned = true;
+                    if (daily)
+                        SetState(_connected, "Molnbryggan: dagskvoten hos " + ServerName() + " är slut för er internetadress (alla datorer hemma delar den). Den fylls på vid midnatt UTC, kl 01 svensk tid. Det du skriver köas; datorer på samma nät når varandra direkt som vanligt.");
+                    else
+                        SetState(_connected, "Molnbryggan: servern bromsar (för många anrop på kort tid) – pausar " + (wait / 60000) + " min och försöker igen. Det du skriver köas.");
+                }
+                else if (status != 429 && _fails == 3)
+                {
+                    SetState(_connected, "Molnbryggan når inte servern (" + Short(_lastError) + ") – försöker igen");
                 }
             }
+        }
+
+        public static void Log(string line) { AppLog.Write("moln", line); }
+
+        string ServerName()
+        {
+            try { return new Uri(_server).Host; } catch { return _server; }
+        }
+
+        /// <summary>ntfy svarar med JSON {"code":42908,"http":429,"error":"limit reached: ..."} – plocka ut texten.</summary>
+        static string ServerError(HttpWebResponse r)
+        {
+            try
+            {
+                using (Stream s = r.GetResponseStream())
+                using (StreamReader rd = new StreamReader(s, Utf8))
+                {
+                    char[] buf = new char[2000];
+                    int n = rd.Read(buf, 0, buf.Length);
+                    if (n <= 0) return null;
+                    string body = new string(buf, 0, n).Trim();
+                    Dictionary<string, object> o = null;
+                    try { o = new JavaScriptSerializer().DeserializeObject(body) as Dictionary<string, object>; } catch { }
+                    if (o != null)
+                    {
+                        string err = Str(o, "error"), code = Str(o, "code");
+                        if (err.Length > 0) return err + (code.Length > 0 ? " [" + code + "]" : "");
+                    }
+                    return body.Length > 160 ? body.Substring(0, 160) + "…" : body;
+                }
+            }
+            catch { return null; }
         }
 
         /// <summary>Skickar en liten ram direkt (t.ex. CBYE vid avslut) med kort timeout. Fel ignoreras.</summary>
@@ -241,38 +344,77 @@ namespace MiniChat
 
         void SubscribeLoop()
         {
-            int backoff = 2000;
+            int backoff = 5000;
+            int badSessions = 0;              // strömmar som stängts snabbt eller aldrig gett något
+            DateTime pollUntil = DateTime.MinValue;
             while (_running)
             {
+                bool polling = DateTime.UtcNow < pollUntil;
+                _polling = polling;
+                DateTime started = DateTime.UtcNow;
+                int lines = 0;
                 try
                 {
-                    string url = _server + "/" + _topic + "/json?since=" + (_lastId ?? "12h");
+                    string url = _server + "/" + _topic + "/json?since=" + (_lastId ?? "12h") + (polling ? "&poll=1" : "");
                     HttpWebRequest req = NewRequest(url, "GET");
-                    req.ReadWriteTimeout = 120000; // servern skickar keepalive var 45:e sekund
+                    req.ReadWriteTimeout = polling ? 60000 : 120000; // strömmen får keepalive var 45:e sekund
                     _subReq = req;
                     using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                     using (StreamReader r = new StreamReader(resp.GetResponseStream(), Utf8))
                     {
+                        if (!polling) Log("prenumeration öppen (" + _topic + ")");
                         SetState(true, null);
-                        backoff = 2000;
                         string line;
                         while (_running && (line = r.ReadLine()) != null)
                         {
                             if (line.Length == 0) continue;
+                            lines++;
                             try { HandleLine(line); } catch { }
                         }
                     }
+                    if (!_running) break;
+                    if (polling)
+                    {
+                        // Vanlig hämtning: vänta 45 s och fråga igen. Ett anrop per 45 s klarar alla proxyer och gränser.
+                        for (int i = 0; i < 45 && _running; i++) Thread.Sleep(1000);
+                        continue;
+                    }
+                    // Strömmen stängdes snällt. Frisk om den levde en stund och gav minst en rad (ntfy skickar "open" direkt).
+                    double alive = (DateTime.UtcNow - started).TotalSeconds;
+                    if (lines > 0 && alive >= 30) { badSessions = 0; backoff = 5000; }
+                    else { badSessions++; Log("strömmen stängdes efter " + (int)alive + " s med " + lines + " rader"); }
                 }
                 catch (Exception ex)
                 {
                     if (!_running) break;
-                    _lastError = ex.Message;
-                    SetState(false, "Molnbryggan tappade kontakten – försöker igen");
+                    WebException wex = ex as WebException;
+                    HttpWebResponse wr = wex != null ? wex.Response as HttpWebResponse : null;
+                    int status = wr != null ? (int)wr.StatusCode : 0;
+                    string detail = wr != null ? ServerError(wr) : null;
+                    _lastError = (status > 0 ? "HTTP " + status : ex.Message) + (detail != null ? " (" + detail + ")" : "");
+                    double alive = (DateTime.UtcNow - started).TotalSeconds;
+                    Log((polling ? "hämtning" : "prenumeration") + " bröts efter " + (int)alive + " s: " + _lastError);
+                    // En ström som gick i timeout utan en enda rad är en proxy som buffrar – räkna som trasig
+                    if (!polling && (lines == 0 || alive < 30)) badSessions++;
+                    if (status == 429) backoff = Math.Max(backoff, 120000);
+                    SetState(false, null);
                 }
                 if (!_running) break;
-                Thread.Sleep(backoff);
-                backoff = Math.Min(backoff * 2, 60000);
+
+                if (!polling && badSessions >= 3)
+                {
+                    // Det här nätet håller inte strömmen öppen. Kör vanliga hämtningar i 15 min och prova strömmen igen sedan.
+                    pollUntil = DateTime.UtcNow.AddMinutes(15);
+                    badSessions = 0;
+                    backoff = 5000;
+                    Log("går över till hämtning var 45:e sekund i 15 min");
+                    SetState(_connected, "Molnbryggan: det här nätet håller inte strömmen öppen – hämtar nya meddelanden var 45:e sekund i stället");
+                    continue;
+                }
+                for (int i = 0; i < backoff / 1000 && _running; i++) Thread.Sleep(1000);
+                backoff = Math.Min(Math.Max(backoff * 2, 15000), 300000);
             }
+            _polling = false;
             SetState(false, null);
         }
 
@@ -301,8 +443,14 @@ namespace MiniChat
             byte[] frame;
             try { frame = Crypto.Unseal(_enc, _mac, Convert.FromBase64String(msg)); }
             catch { return; } // annan kod, skräp eller ntfy:s egna meddelanden
-            Action<byte[], string, long> h = Received;
-            if (h != null) h(frame, url, size);
+            DateTime at = DateTime.UtcNow;
+            object t;
+            if (o.TryGetValue("time", out t))
+            {
+                try { at = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(Convert.ToInt64(t)); } catch { }
+            }
+            Action<byte[], string, long, DateTime> h = Received;
+            if (h != null) h(frame, url, size, at);
         }
 
         static string Str(Dictionary<string, object> o, string key)

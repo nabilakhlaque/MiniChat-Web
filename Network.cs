@@ -68,6 +68,9 @@ namespace MiniChat
         public string Via;          // null = direkt (P2P), "cloud" = via molnbryggan
         public DateTime Started = DateTime.Now;
         internal string CloudUrl;
+        /// <summary>Avsändaren vill att filen skrivs ut hos mottagaren (bara PDF, bara hos dem som slagit på utskrift).</summary>
+        public bool PrintRequested;
+        internal string PrintTo;    // molnet: kommaseparerade id:n som ska skriva ut
 
         internal FileStream Stream;
         internal SemaphoreSlim Window;
@@ -108,6 +111,9 @@ namespace MiniChat
         public int ListenPort { get; private set; }
         public bool IsRunning { get { return _running; } }
         public bool AutoAccept = true;
+        /// <summary>Den här datorn tar emot utskriftsjobb. Utskriftsfiler tas då emot automatiskt även om AutoAccept är av.</summary>
+        public bool PrintEnabled = false;
+        public event Action<string, string, string, bool, string> PrintResultReceived; // (avsändar-id, namn, överförings-id, ok, text)
         public string DownloadFolder;
 
         public event Action<Peer> PeerJoined;
@@ -129,10 +135,15 @@ namespace MiniChat
         CloudBridge _cloud;
         readonly Dictionary<string, CloudPeer> _cloudPeers = new Dictionary<string, CloudPeer>();
         DateTime _lastCloudHello = DateTime.MinValue, _lastCloudAvatar = DateTime.MinValue;
+        // Närvaro via molnet kostar meddelanden ur ntfy:s dagskvot (delas av alla datorer bakom samma internetadress),
+        // så pulsen är gles och en deltagare räknas som inne tills två pulser uteblivit.
+        const int CloudHeartbeatMinutes = 45;
+        const int CloudPeerTtlMinutes = 100;
         string _cloudSeenPending;
 
         public bool CloudEnabled { get { return _cloud != null; } }
         public bool CloudConnected { get { return _cloud != null && _cloud.Connected; } }
+        public string CloudStatus { get { CloudBridge c = _cloud; return c == null ? "av" : c.StatusText; } }
 
         readonly object _lock = new object();
         readonly Dictionary<string, Peer> _peers = new Dictionary<string, Peer>();
@@ -175,7 +186,7 @@ namespace MiniChat
                         foreach (Participant r in p.Roster)
                             if (r.Id != SelfId && !d.ContainsKey(r.Id))
                                 d[r.Id] = new Participant { Id = r.Id, Name = r.Name, Avatar = r.Avatar, Status = r.Status, Direct = false };
-                    DateTime cutoff = DateTime.UtcNow.AddMinutes(-25);
+                    DateTime cutoff = DateTime.UtcNow.AddMinutes(-CloudPeerTtlMinutes);
                     foreach (CloudPeer cp in _cloudPeers.Values)
                         if (cp.Id != SelfId && cp.LastSeen > cutoff && !d.ContainsKey(cp.Id))
                             d[cp.Id] = new Participant { Id = cp.Id, Name = cp.Name ?? "Okänd", Avatar = cp.Avatar, Status = cp.Status ?? "online", Direct = false, Cloud = true };
@@ -212,6 +223,7 @@ namespace MiniChat
             _listener = BindListener(preferredPort);
             ListenPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
             _running = true;
+            AppLog.Write("nät", "startar som " + SelfName + " (" + SelfStatus + "), lyssnar på TCP " + ListenPort + (preferredPort != ListenPort ? " (port " + preferredPort + " var upptagen)" : "") + ", IP " + string.Join(", ", LocalAddresses().ToArray()));
 
             try
             {
@@ -225,6 +237,7 @@ namespace MiniChat
             catch (Exception ex)
             {
                 _udp = null;
+                AppLog.Write("nät", "UDP-upptäckt kunde inte startas: " + ex.Message);
                 Emit("Kunde inte starta upptäckt på lokala nätet: " + ex.Message);
             }
 
@@ -235,6 +248,7 @@ namespace MiniChat
         public void Stop()
         {
             if (!_running) return;
+            AppLog.Write("nät", "stänger ner");
             DisableCloud();
             _running = false;
             try { if (_timer != null) _timer.Dispose(); } catch { }
@@ -318,7 +332,7 @@ namespace MiniChat
             SelfStatus = status;
             byte[] frame = Frame("STATUS|" + status, null);
             Task ignored = Task.Run(() => Broadcast(frame, null));
-            CloudHello(false);
+            if (HasCloudPeers()) CloudHello(false, false); // bara om någon faktiskt lyssnar via molnet
         }
 
         public void SendTyping(bool on)
@@ -359,7 +373,7 @@ namespace MiniChat
             SelfName = CleanName(name);
             byte[] frame = Frame("NAME|" + SelfName, null);
             Task ignored = Task.Run(() => Broadcast(frame, null));
-            CloudHello(true);
+            if (HasCloudPeers()) CloudHello(true, false);
         }
 
         public void SetAvatar(byte[] avatar)
@@ -382,12 +396,20 @@ namespace MiniChat
             CloudBridge c = new CloudBridge(server, code);
             c.StateChanged += (ok, msg) =>
             {
-                if (ok) { CloudHello(true); CloudAvatar(); }
+                if (ok)
+                {
+                    // Kort avbrott: ingen hälsning alls (servern spelar upp det vi missat). Längre: hälsa, och be om
+                    // svar bara om vi varit borta så länge att de andra kan ha glömt oss.
+                    double gap = (DateTime.UtcNow - _lastCloudHello).TotalMinutes;
+                    if (gap > 5) CloudHello(true, gap > CloudPeerTtlMinutes);
+                    CloudAvatar();
+                }
                 Action<bool, string> ev = CloudStateChanged;
                 if (ev != null) ev(ok, msg);
             };
             c.Received += OnCloudEvent;
             _cloud = c;
+            AppLog.Write("moln", "molnbryggan startar mot " + (string.IsNullOrEmpty(server) ? CloudBridge.DefaultServer : server));
             c.Start();
         }
 
@@ -396,6 +418,7 @@ namespace MiniChat
             CloudBridge c = _cloud;
             if (c == null) return;
             _cloud = null;
+            AppLog.Write("moln", "molnbryggan stängs av");
             try { c.TrySendNow(Frame("CBYE|" + SelfId, null)); } catch { }
             c.Stop();
             lock (_lock) _cloudPeers.Clear();
@@ -408,6 +431,11 @@ namespace MiniChat
             if (_cloud == null) return false;
             List<Participant> ps = Participants;
             return ps.Count == 0 || ps.Any(x => x.Cloud);
+        }
+
+        bool HasCloudPeers()
+        {
+            return _cloud != null && Participants.Any(x => x.Cloud);
         }
 
         void BroadcastAll(byte[] frame)
@@ -425,7 +453,11 @@ namespace MiniChat
             if (cloudToo && from != null && c != null && Participants.Any(x => x.Cloud)) c.Publish(plain);
         }
 
-        void CloudHello(bool force)
+        /// <summary>
+        /// Närvaro via molnet. wantReply=true betyder "jag är ny här, svara så jag ser er" (start, lång frånvaro);
+        /// pulser och statusbyten skickas utan svarsbegäran så att inte varje puls kostar ett meddelande per deltagare.
+        /// </summary>
+        void CloudHello(bool force, bool wantReply)
         {
             CloudBridge c = _cloud;
             if (c == null) return;
@@ -434,7 +466,7 @@ namespace MiniChat
                 if (!force && (DateTime.UtcNow - _lastCloudHello).TotalSeconds < 60) return;
                 _lastCloudHello = DateTime.UtcNow;
             }
-            c.Publish(Frame("CHELLO|" + SelfId + "|" + SelfName + "|" + SelfStatus, null));
+            c.Publish(Frame("CHELLO|" + SelfId + "|" + SelfName + "|" + SelfStatus + "|" + (wantReply ? "1" : "0"), null));
         }
 
         void CloudAvatar()
@@ -455,30 +487,45 @@ namespace MiniChat
             }
         }
 
-        /// <summary>Uppdaterar vad vi vet om en molndeltagare. Returnerar true om den var ny eller länge tyst.</summary>
-        bool TouchCloudPeer(string id, string name, string status)
+        /// <summary>
+        /// Uppdaterar vad vi vet om en molndeltagare. 'at' är när meddelandet skickades enligt servern – servern
+        /// spelar upp 12 timmar gammal historik vid anslutning, och en hälsning från i morse betyder inte att någon är
+        /// inne nu. Returnerar true om deltagaren var ny eller länge tyst.
+        /// </summary>
+        bool TouchCloudPeer(string id, string name, string status, DateTime at)
         {
             if (id == SelfId) return false;
+            if (at == DateTime.MinValue) at = DateTime.UtcNow;
             bool fresh;
             lock (_lock)
             {
                 CloudPeer cp;
                 bool known = _cloudPeers.TryGetValue(id, out cp);
-                fresh = !known || (DateTime.UtcNow - cp.LastSeen).TotalMinutes > 10;
+                fresh = !known || (at - cp.LastSeen).TotalMinutes > 10;
                 if (!known)
                 {
-                    cp = new CloudPeer { Id = id, Avatar = LoadCachedAvatar(id) };
+                    cp = new CloudPeer { Id = id, Avatar = LoadCachedAvatar(id), LastSeen = at };
                     _cloudPeers[id] = cp;
+                    bool alive = (DateTime.UtcNow - at).TotalMinutes < CloudPeerTtlMinutes;
+                    AppLog.Write("moln", (name ?? "okänd") + (alive ? " syns via molnbryggan" : " fanns i molnets historik (" + (int)(DateTime.UtcNow - at).TotalMinutes + " min gammalt)"));
                 }
-                if (name != null) cp.Name = name;
-                if (status != null) cp.Status = status;
-                cp.LastSeen = DateTime.UtcNow;
+                if (at >= cp.LastSeen)
+                {
+                    if (name != null) cp.Name = name;
+                    if (status != null) cp.Status = status;
+                    cp.LastSeen = at;
+                }
             }
             RaiseRoster();
             return fresh;
         }
 
-        void OnCloudEvent(byte[] frame, string url, long size)
+        static bool IsStale(DateTime at)
+        {
+            return at != DateTime.MinValue && (DateTime.UtcNow - at).TotalMinutes > 2;
+        }
+
+        void OnCloudEvent(byte[] frame, string url, long size, DateTime at)
         {
             CloudBridge c = _cloud;
             if (c == null || !_running) return;
@@ -490,25 +537,36 @@ namespace MiniChat
                 switch (p[0])
                 {
                     case "CHELLO":
-                        if (p.Length < 4) return;
-                        if (TouchCloudPeer(p[1], CleanName(p[2]), CleanStatus(p[3]))) CloudHello(false);
-                        return;
+                        {
+                            if (p.Length < 4) return;
+                            bool fresh = TouchCloudPeer(p[1], CleanName(p[2]), CleanStatus(p[3]), at);
+                            // Svara bara på färska hälsningar som ber om svar (eller från äldre klienter utan flagga, om de är nya för oss)
+                            bool wantsReply = p.Length >= 5 ? p[4] == "1" : fresh;
+                            if (wantsReply && !IsStale(at)) CloudHello(false, false);
+                            return;
+                        }
                     case "CBYE":
-                        if (p.Length < 2 || p[1] == SelfId) return;
-                        lock (_lock) _cloudPeers.Remove(p[1]);
-                        RaiseRoster();
-                        return;
+                        {
+                            if (p.Length < 2 || p[1] == SelfId) return;
+                            lock (_lock)
+                            {
+                                CloudPeer cp;
+                                if (_cloudPeers.TryGetValue(p[1], out cp) && at >= cp.LastSeen) _cloudPeers.Remove(p[1]);
+                            }
+                            RaiseRoster();
+                            return;
+                        }
                     case "CAVATAR":
                         {
                             if (p.Length < 3 || p[1] == SelfId) return;
                             string id = p[1], name = CleanName(p[2]);
-                            if (url == null) { SetCloudAvatar(id, name, null); return; }
+                            if (url == null) { SetCloudAvatar(id, name, null, at); return; }
                             Task ignored = Task.Run(() =>
                             {
                                 byte[] av = null;
                                 try { av = c.Download(url, size, null); } catch { }
                                 if (av != null && av.Length > MaxAvatar) av = null;
-                                SetCloudAvatar(id, name, av);
+                                SetCloudAvatar(id, name, av, at);
                             });
                             return;
                         }
@@ -517,24 +575,24 @@ namespace MiniChat
                             if (url == null) return;
                             Task ignored = Task.Run(() =>
                             {
-                                try { HandleFrame(null, c.Download(url, size, null)); } catch { }
+                                try { HandleFrame(null, c.Download(url, size, null), at); } catch { }
                             });
                             return;
                         }
                     case "CFILE":
-                        HandleCloudFile(p, frame, nl, url);
+                        HandleCloudFile(p, frame, nl, url, at);
                         return;
                     default:
-                        HandleFrame(null, frame);
+                        HandleFrame(null, frame, at);
                         return;
                 }
             }
             catch { }
         }
 
-        void SetCloudAvatar(string id, string name, byte[] avatar)
+        void SetCloudAvatar(string id, string name, byte[] avatar, DateTime at)
         {
-            TouchCloudPeer(id, name, null);
+            TouchCloudPeer(id, name, null, at);
             lock (_lock)
             {
                 CloudPeer cp;
@@ -544,22 +602,30 @@ namespace MiniChat
             RaiseRoster();
         }
 
-        void HandleCloudFile(string[] p, byte[] frame, int nl, string url)
+        void HandleCloudFile(string[] p, byte[] frame, int nl, string url, DateTime at)
         {
-            // CFILE|tid|from|fromName|storlek ; kropp = filnamn ; bilagan = filen (krypterad)
+            // CFILE|tid|from|fromName|storlek[|utskrift-id,id,…] ; kropp = filnamn ; bilagan = filen (krypterad)
             long fsize;
             if (p.Length < 5 || url == null || !long.TryParse(p[4], out fsize) || fsize < 0) return;
             if (p[2] == SelfId || GetTransfer(p[1]) != null) return;
+            bool print = false;
+            if (p.Length >= 6 && p[5].Length > 0)
+            {
+                // Utskriftsjobb är bara till de utvalda – övriga ignorerar det helt
+                if (!p[5].Split(',').Contains(SelfId)) return;
+                print = true;
+            }
             string name = nl < 0 ? "fil" : Utf8.GetString(frame, nl + 1, frame.Length - nl - 1);
             FileTransfer t = new FileTransfer
             {
                 Id = p[1], FromId = p[2], FromName = CleanName(p[3]), ToId = SelfId, ToName = SelfName,
-                FileName = CleanFileName(name), Size = fsize, Outgoing = false, State = "offer", Via = "cloud", CloudUrl = url
+                FileName = CleanFileName(name), Size = fsize, Outgoing = false, State = "offer", Via = "cloud", CloudUrl = url,
+                PrintRequested = print
             };
             lock (_lock) _transfers[t.Id] = t;
-            TouchCloudPeer(p[2], t.FromName, null);
+            TouchCloudPeer(p[2], t.FromName, null, at);
             Report(t, true);
-            if (AutoAccept) AcceptFile(t.Id);
+            if (AutoAccept || (print && PrintEnabled)) AcceptFile(t.Id);
         }
 
         async Task RunCloudOutgoing(FileTransfer t)
@@ -574,7 +640,7 @@ namespace MiniChat
                 t.State = "active";
                 t.LastActivity = DateTime.UtcNow;
                 Report(t, true);
-                byte[] header = Frame("CFILE|" + t.Id + "|" + SelfId + "|" + SelfName + "|" + t.Size, Utf8.GetBytes(t.FileName));
+                byte[] header = Frame("CFILE|" + t.Id + "|" + SelfId + "|" + SelfName + "|" + t.Size + (t.PrintRequested ? "|" + t.PrintTo : ""), Utf8.GetBytes(t.FileName));
                 bool ok = await Task.Run(() => c.PutAttachment(header, data, delegate(long done, long total)
                 {
                     t.Done = Math.Min(t.Size, (long)(t.Size * (double)done / Math.Max(1, total)));
@@ -679,9 +745,19 @@ namespace MiniChat
         /// <summary>Skickar filen till alla som är online just nu – en överföring per mottagare.</summary>
         public List<FileTransfer> SendFile(string path)
         {
+            return SendFile(path, null);
+        }
+
+        /// <summary>
+        /// printTargets != null: ett utskriftsjobb. Filen går då bara till de valda, markerad för utskrift.
+        /// </summary>
+        public List<FileTransfer> SendFile(string path, ICollection<string> printTargets)
+        {
             FileInfo fi = new FileInfo(path);
             List<FileTransfer> list = new List<FileTransfer>();
-            foreach (Participant pt in Participants)
+            bool print = printTargets != null;
+            List<Participant> targets = Participants.Where(x => !print || printTargets.Contains(x.Id)).ToList();
+            foreach (Participant pt in targets.Where(x => !x.Cloud))
             {
                 FileTransfer t = new FileTransfer
                 {
@@ -696,7 +772,8 @@ namespace MiniChat
                     Outgoing = true,
                     State = "waiting",
                     Window = new SemaphoreSlim(WindowSize, WindowSize),
-                    Accepted = new TaskCompletionSource<bool>()
+                    Accepted = new TaskCompletionSource<bool>(),
+                    PrintRequested = print
                 };
                 lock (_lock) _transfers[t.Id] = t;
                 list.Add(t);
@@ -704,14 +781,15 @@ namespace MiniChat
             }
             if (_cloud != null)
             {
-                List<Participant> cloudOnly = Participants.Where(x => x.Cloud).ToList();
+                List<Participant> cloudOnly = targets.Where(x => x.Cloud).ToList();
                 if (cloudOnly.Count > 0)
                 {
                     FileTransfer ct = new FileTransfer
                     {
                         Id = NewId(), FromId = SelfId, FromName = SelfName, ToId = "cloud",
                         ToName = string.Join(", ", cloudOnly.Select(x => x.Name).ToArray()),
-                        FileName = fi.Name, FilePath = fi.FullName, Size = fi.Length, Outgoing = true, State = "waiting", Via = "cloud"
+                        FileName = fi.Name, FilePath = fi.FullName, Size = fi.Length, Outgoing = true, State = "waiting", Via = "cloud",
+                        PrintRequested = print, PrintTo = string.Join(",", cloudOnly.Select(x => x.Id).ToArray())
                     };
                     lock (_lock) _transfers[ct.Id] = ct;
                     list.Add(ct);
@@ -719,6 +797,15 @@ namespace MiniChat
                 }
             }
             return list;
+        }
+
+        /// <summary>Berättar för avsändaren hur det gick med utskriften.</summary>
+        public void SendPrintResult(FileTransfer t, bool ok, string text)
+        {
+            string id = NewId();
+            MarkSeen(id);
+            byte[] frame = Frame("PRINTRES|" + id + "|" + SelfId + "|" + SelfName + "|" + t.Id + "|" + (ok ? "1" : "0"), Utf8.GetBytes(text ?? ""));
+            Task ignored = Task.Run(() => BroadcastAll(frame));
         }
 
         public void AcceptFile(string id)
@@ -764,7 +851,7 @@ namespace MiniChat
             try
             {
                 Report(t, true);
-                Route(t.ToId, Frame("FOFFER|" + t.Id + "|" + SelfId + "|" + SelfName + "|" + t.ToId + "|" + t.Size, Utf8.GetBytes(t.FileName)), null);
+                Route(t.ToId, Frame("FOFFER|" + t.Id + "|" + SelfId + "|" + SelfName + "|" + t.ToId + "|" + t.Size + (t.PrintRequested ? "|P" : ""), Utf8.GetBytes(t.FileName)), null);
                 Task done = await Task.WhenAny(t.Accepted.Task, Task.Delay(90000));
                 if (done != t.Accepted.Task) { Fail(t, "Mottagaren svarade inte.", false); return; }
                 if (!t.Accepted.Task.Result) { t.State = "declined"; Report(t, true); return; }
@@ -840,11 +927,12 @@ namespace MiniChat
                             FileName = CleanFileName(Utf8.GetString(body)),
                             Size = size,
                             Outgoing = false,
-                            State = "offer"
+                            State = "offer",
+                            PrintRequested = p.Length >= 7 && p[6] == "P"
                         };
                         lock (_lock) _transfers[tid] = t;
                         Report(t, true);
-                        if (AutoAccept) AcceptFile(tid);
+                        if (AutoAccept || (t.PrintRequested && PrintEnabled)) AcceptFile(tid);
                         break;
                     }
                 case "FACCEPT":
@@ -952,6 +1040,8 @@ namespace MiniChat
 
         void Report(FileTransfer t, bool force)
         {
+            if (force && (t.State == "done" || t.State == "error" || t.State == "declined" || (t.State == "active" && t.Done == 0)))
+                AppLog.Write("fil", (t.Outgoing ? "skickar " : "tar emot ") + t.FileName + " (" + t.Size + " B) " + (t.Via == "cloud" ? "via molnet " : "") + "→ " + t.State + (t.Error != null ? ": " + t.Error : ""));
             DateTime now = DateTime.UtcNow;
             if (!force && (now - t.LastReport).TotalMilliseconds < 120) return;
             t.LastReport = now;
@@ -1013,7 +1103,7 @@ namespace MiniChat
                 CloudBridge cloud = _cloud;
                 if (cloud != null)
                 {
-                    if (_tick % 400 == 0) CloudHello(true); // puls var 20:e minut
+                    if (_tick % (CloudHeartbeatMinutes * 20) == 0) CloudHello(true, false); // puls, utan svarsbegäran
                     if (_tick % 20 == 0)
                     {
                         string seenId;
@@ -1027,7 +1117,7 @@ namespace MiniChat
                         bool removed = false;
                         lock (_lock)
                         {
-                            DateTime cutoff = DateTime.UtcNow.AddMinutes(-25);
+                            DateTime cutoff = DateTime.UtcNow.AddMinutes(-CloudPeerTtlMinutes);
                             foreach (string k in _cloudPeers.Keys.ToList())
                                 if (_cloudPeers[k].LastSeen < cutoff) { _cloudPeers.Remove(k); removed = true; }
                         }
@@ -1213,6 +1303,7 @@ namespace MiniChat
                         }
                     }
                     if (verbose) Emit("Ansluter till " + hostPort + "…");
+                    AppLog.Write("nät", "ansluter till sparad adress " + hostPort + " (" + addr + ":" + port + ")");
                     await ConnectAsync(addr, port, hostPort, verbose);
                 }
                 catch (Exception ex)
@@ -1261,6 +1352,7 @@ namespace MiniChat
             catch (Exception ex)
             {
                 try { client.Close(); } catch { }
+                AppLog.Write("nät", "kunde inte ansluta till " + (manualAddr ?? (addr + ":" + port)) + ": " + ex.Message);
                 if (verbose) Emit("Kunde inte ansluta till " + (manualAddr ?? (addr + ":" + port)) + ": " + ex.Message);
             }
             if (connected) await HandleConnection(client, true, manualAddr);
@@ -1349,6 +1441,7 @@ namespace MiniChat
                     known = string.Join(",", _peers.Values.Where(x => x != peer).Select(x => x.EndPoint).ToArray());
                 if (known.Length > 0) SendFrame(peer, Frame("PEERS|" + known, null));
 
+                AppLog.Write("nät", (outbound ? "ansluten till " : "inkommande från ") + theirName + " @ " + remoteAddr + ":" + theirPort + (old != null ? " (ersätter dubblett)" : "") + (manualAddr != null ? " via " + manualAddr : ""));
                 if (old == null)
                 {
                     Raise(PeerJoined, peer);
@@ -1365,9 +1458,14 @@ namespace MiniChat
                     HandleFrame(peer, plain);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // tappad förbindelse eller ogiltig data – städas nedan
+                if (_running)
+                {
+                    string who = peer != null ? "förbindelsen till " + peer.Name + " bröts: " : "misslyckad handskakning: ";
+                    AppLog.Write("nät", who + ex.Message);
+                }
             }
             finally
             {
@@ -1386,6 +1484,7 @@ namespace MiniChat
                     }
                     if (removed)
                     {
+                        AppLog.Write("nät", peer.Name + " frånkopplad");
                         Raise(PeerLeft, peer);
                         RaiseRoster();
                         ScheduleRoster();
@@ -1394,7 +1493,7 @@ namespace MiniChat
             }
         }
 
-        void HandleFrame(Peer from, byte[] plain)
+        void HandleFrame(Peer from, byte[] plain, DateTime cloudAt = default(DateTime))
         {
             int nl = Array.IndexOf(plain, (byte)10);
             string header = Utf8.GetString(plain, 0, nl < 0 ? plain.Length : nl);
@@ -1423,7 +1522,7 @@ namespace MiniChat
                             Time = ticks > 0 && ticks < DateTime.MaxValue.Ticks ? new DateTime(ticks, DateTimeKind.Utc).ToLocalTime() : DateTime.Now,
                             Text = Utf8.GetString(body)
                         };
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
                         if (m.FromId != SelfId) Raise(MessageReceived, m);
                         Relay(plain, from, true);
                         break;
@@ -1432,7 +1531,8 @@ namespace MiniChat
                     {
                         if (p.Length < 4) return;
                         if (!MarkSeen(p[1])) return;
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
+                        if (from == null && IsStale(cloudAt)) return; // gammalt ur molnets historik – spela inte upp
                         if (p[2] != SelfId)
                         {
                             Action<string, string> ev = SoundReceived;
@@ -1462,18 +1562,20 @@ namespace MiniChat
                 case "SOUNDX":
                     {
                         if (p.Length < 5 || !MarkSeen(p[1])) return;
+                        if (from == null && IsStale(cloudAt)) { TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt); return; }
                         if (p[2] != SelfId && body.Length > 0 && body.Length <= 3 * 1024 * 1024)
                         {
                             Action<string, string, string, byte[]> ev = SoundDataReceived;
                             if (ev != null && _running) ev(CleanName(p[3]), CleanName(p[4]), p.Length > 5 ? p[5] : ".wav", body);
                         }
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
                         Relay(plain, from, true);
                         break;
                     }
                 case "TYPING":
                     {
                         if (p.Length < 5 || !MarkSeen(p[1])) return;
+                        if (from == null && IsStale(cloudAt)) return;
                         if (p[2] != SelfId)
                         {
                             Action<string, string, bool> ev = TypingChanged;
@@ -1485,12 +1587,13 @@ namespace MiniChat
                 case "NUDGE":
                     {
                         if (p.Length < 4 || !MarkSeen(p[1])) return;
+                        if (from == null && IsStale(cloudAt)) { TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt); return; }
                         if (p[2] != SelfId)
                         {
                             Action<string, string> ev = NudgeReceived;
                             if (ev != null && _running) ev(p[2], CleanName(p[3]));
                         }
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
                         Relay(plain, from, true);
                         break;
                     }
@@ -1502,7 +1605,7 @@ namespace MiniChat
                             Action<string, string, string> ev = SeenReceived;
                             if (ev != null && _running) ev(p[2], CleanName(p[3]), p[4]);
                         }
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
                         Relay(plain, from, false);
                         break;
                     }
@@ -1514,7 +1617,7 @@ namespace MiniChat
                             Action<string, string, string, string, bool> ev = ReactionReceived;
                             if (ev != null && _running) ev(p[2], CleanName(p[3]), p[4], Utf8.GetString(body), p[5] == "1");
                         }
-                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null);
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
                         Relay(plain, from, true);
                         break;
                     }
@@ -1569,6 +1672,19 @@ namespace MiniChat
                 case "BYE":
                     if (from != null) { try { from.Client.Close(); } catch { } }
                     break;
+                case "PRINTRES":
+                    {
+                        // PRINTRES|id|från|namn|överförings-id|1/0 ; kropp = text
+                        if (p.Length < 6 || !MarkSeen(p[1])) return;
+                        if (from == null) TouchCloudPeer(p[2], CleanName(p[3]), null, cloudAt);
+                        if (p[2] != SelfId)
+                        {
+                            Action<string, string, string, bool, string> ev = PrintResultReceived;
+                            if (ev != null && _running) ev(p[2], CleanName(p[3]), p[4], p[5] == "1", Utf8.GetString(body));
+                        }
+                        Relay(plain, from, true);
+                        break;
+                    }
                 case "FOFFER":
                 case "FACCEPT":
                 case "FDECLINE":

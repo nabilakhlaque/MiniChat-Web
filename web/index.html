@@ -170,6 +170,16 @@ svg { display: block; }
   outline: none; background: #F8FAFC; color: #1F2A37; }
 .inp:focus { border-color: #3C8CE7; box-shadow: 0 0 0 3px rgba(60,140,231,.18); background: #fff; }
 .btns { display: flex; justify-content: flex-end; margin-top: 16px; }
+.plist { max-height: 260px; overflow-y: auto; margin: 0 -4px; }
+.prow { display: flex; align-items: center; padding: 9px 6px; border-radius: 12px; cursor: pointer; }
+.prow:active { background: #F1F5F9; }
+.prow .av { margin-right: 10px; }
+.prow .pn { flex: 1; font-size: 15px; }
+.cbx { width: 22px; height: 22px; border-radius: 7px; border: 2px solid #CBD5E1; box-sizing: border-box; flex: 0 0 22px; position: relative; transition: all .15s; }
+.cbx.on { background: #3C8CE7; border-color: #3C8CE7; }
+.cbx.on:after { content: ''; position: absolute; left: 6px; top: 2px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.pempty { color: #94A3B8; font-size: 13px; padding: 10px 6px; }
+.ftag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: #3C8CE7; background: #E8F1FD; border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
 .btn { border: 0; border-radius: 999px; padding: 10px 18px; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; margin-left: 8px; outline: none; }
 .btn.pri { background: linear-gradient(135deg, #4A93EA, #2D7FDD); color: #fff; box-shadow: 0 4px 12px rgba(45,127,221,.3); }
 .btn.gho { background: #EEF3F8; color: #1F2A37; }
@@ -210,12 +220,14 @@ svg { display: block; }
   <div id="composer">
     <div class="pill" id="pill">
       <button class="ib" id="attachBtn" title="Skicka fil"></button>
+      <button class="ib" id="printBtn" title="Skicka PDF för utskrift"></button>
       <textarea id="input" rows="1" placeholder="Skriv ett meddelande…" enterkeyhint="send"></textarea>
       <button class="send off" id="sendBtn" title="Skicka"></button>
     </div>
     <div class="hint" id="hint">Skriv *prutt* eller *skratt* för ljud hos den andra</div>
   </div>
   <input type="file" id="filepick" multiple style="display:none">
+  <input type="file" id="printpick" accept="application/pdf,.pdf" style="display:none">
   <input type="file" id="avpick" accept="image/*" style="display:none">
   <div id="menu" class="pop hidden"></div>
   <div id="toast"></div>
@@ -238,6 +250,7 @@ svg { display: block; }
 'use strict';
 // ============================================================ ikoner (Material Design, Apache 2.0)
 const I = {
+  print: 'M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z',
   gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
   attach: 'M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z',
   send: 'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
@@ -263,6 +276,9 @@ const EMOJIS = ['👍', '❤️', '😂', '😮', '🙏'];
 const STATUS_TEXT = { online: 'Tillgänglig', busy: 'Upptagen', away: 'Ej vid datorn' };
 const SOUND_URLS = { ding: 'sounds/ding.wav', prutt: 'sounds/prutt.wav', skratt: 'sounds/skratt.wav', knock: 'sounds/knock.wav' };
 const MAX_TEXT_FRAME = 2700, CLOUD_FILE_LIMIT = 5 * 1024 * 1024, MAX_AVATAR = 96 * 1024;
+// Närvaro kostar meddelanden ur ntfy:s dagskvot (delas av alla bakom samma internetadress): gles puls, lång livstid.
+const HEARTBEAT_MIN = 45, PEER_TTL_MIN = 100;
+const isStale = at => at && Date.now() - at > 2 * 60000;
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 // ============================================================ hjälp
@@ -293,7 +309,7 @@ const seenSet = new Set();
 function markSeen(id) { if (seenSet.has(id)) return false; seenSet.add(id); S.seen.push(id); if (S.seen.length > 3000) S.seen.splice(0, S.seen.length - 3000); return true; }
 
 let K = null;              // nycklar + topic
-let es = null, lastEvent = 0, connected = false, backoff = 2000, reconnectTimer = null;
+let es = null, lastEvent = 0, connected = false, backoff = 5000, reconnectTimer = null;
 const peers = {};          // id -> {name, status, last, avatar}
 let lastHello = 0, lastAvatarPush = 0, seenPending = null, lastSeenSent = 0;
 const myMsgIds = [], seenBy = {}, myReactions = new Set();
@@ -338,7 +354,7 @@ function connect() {
   const since = S.lastId || '12h';
   const src = new EventSource(topicUrl() + '/sse?since=' + encodeURIComponent(since));
   es = src;
-  src.onopen = () => { lastEvent = Date.now(); backoff = 2000; setConnected(true); };
+  src.onopen = () => { lastEvent = Date.now(); backoff = 5000; setConnected(true); };
   src.addEventListener('keepalive', () => { lastEvent = Date.now(); });
   src.addEventListener('open', () => { lastEvent = Date.now(); });
   src.onmessage = ev => { lastEvent = Date.now(); try { onNtfy(JSON.parse(ev.data)); } catch (e) { } };
@@ -348,31 +364,55 @@ function connect() {
     es = null;
     setConnected(false);
     reconnectTimer = setTimeout(connect, backoff);
-    backoff = Math.min(backoff * 2, 60000);
+    backoff = Math.min(backoff * 2, 300000);
   };
 }
+let everConnected = false, quotaWarned = false, pauseUntil = 0;
 function setConnected(on) {
-  if (on && !connected) { addSystem('☁ Ansluten – ni når varandra via internet'); sendHello(true); pushAvatar(); }
+  if (on && !connected) {
+    if (!everConnected) addSystem('☁ Ansluten – ni når varandra via internet');
+    everConnected = true;
+    const gap = Date.now() - lastHello;
+    if (gap > 5 * 60000) sendHello(true, gap > PEER_TTL_MIN * 60000);
+    pushAvatar();
+  }
   connected = on;
   renderConn();
 }
 const outq = []; let pumping = false;
 function publish(fr) { outq.push(fr); if (outq.length > 200) outq.shift(); pump(); }
+let pumpFails = 0;
 async function pump() {
   if (pumping) return; pumping = true;
   while (outq.length) {
+    if (pauseUntil > Date.now()) { await sleep(Math.min(5000, pauseUntil - Date.now() + 50)); continue; }
     const fr = outq[0];
+    let status = 0;
     try {
       if (fr.length <= MAX_TEXT_FRAME) {
         const r = await fetch(topicUrl(), { method: 'POST', body: b64(await seal(fr)) });
-        if (r.status === 429) { toast('Molnet: för många meddelanden – väntar en minut'); await sleep(60000); continue; }
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        status = r.status;
+        if (!r.ok) { let d = ''; try { const j = await r.json(); d = j.error || ''; } catch (e) { } throw new Error('HTTP ' + r.status + (d ? ' (' + d + ')' : '')); }
       } else {
         await putAttachment(frame('CBLOB|' + randId()), fr, null);
       }
       outq.shift();
+      if (quotaWarned) { quotaWarned = false; toast('Molnet skickar igen'); }
+      pumpFails = 0;
     } catch (e) {
-      await sleep(10000);
+      if (status === 413) { outq.shift(); toast('Ett meddelande var för stort och hoppades över'); continue; }
+      pumpFails++;
+      const daily = status === 429 && /daily|quota/i.test(e.message || '');
+      let wait;
+      if (daily) { const reset = new Date(); reset.setUTCHours(24, 1, 0, 0); wait = Math.min(30 * 60000, Math.max(60000, reset - Date.now())); }
+      else wait = status === 429 ? Math.min(600000, 60000 * Math.pow(2, Math.min(pumpFails - 1, 3))) : Math.min(120000, 10000 * pumpFails);
+      pauseUntil = Date.now() + wait;
+      console.log('[moln] fel vid sändning: ' + e.message + ' – pausar ' + Math.round(wait / 1000) + ' s');
+      if (status === 429 && !quotaWarned) {
+        quotaWarned = true;
+        addSystem(daily ? '☁ Dagskvoten hos servern är slut för din internetadress – fylls på vid midnatt UTC (kl 01 svensk tid). Det du skriver köas.'
+                        : '☁ Servern bromsar (för många anrop på kort tid) – pausar ' + Math.round(wait / 60000) + ' min. Det du skriver köas.');
+      }
     }
   }
   pumping = false;
@@ -420,60 +460,81 @@ async function onNtfy(o) {
   try { fr = await unseal(unb64(o.message || '')); } catch (e) { return; }
   const url = o.attachment && o.attachment.url ? o.attachment.url : null;
   const size = o.attachment && o.attachment.size ? o.attachment.size : 0;
-  await handleFrame(fr, url, size);
+  const at = o.time ? Number(o.time) * 1000 : Date.now(); // serverns tid – historik spelas upp vid anslutning
+  await handleFrame(fr, url, size, at);
 }
-async function handleFrame(fr, url, size) {
+async function handleFrame(fr, url, size, at) {
+  at = at || Date.now();
   const { p, body } = parseFrame(fr);
   const from = p[2], name = cleanName(p[3]);
   switch (p[0]) {
-    case 'CHELLO': if (p.length < 4 || p[1] === S.id) return; if (touchPeer(p[1], cleanName(p[2]), p[3])) sendHello(false); return;
-    case 'CBYE': if (p[1] && p[1] !== S.id) { delete peers[p[1]]; renderRoster(); } return;
+    case 'CHELLO': {
+      if (p.length < 4 || p[1] === S.id) return;
+      const fresh = touchPeer(p[1], cleanName(p[2]), p[3], at);
+      const wantsReply = p.length >= 5 ? p[4] === '1' : fresh; // äldre klienter utan flagga: svara om de är nya för oss
+      if (wantsReply && !isStale(at)) sendHello(false, false);
+      return;
+    }
+    case 'CBYE': if (p[1] && p[1] !== S.id && (!peers[p[1]] || at >= peers[p[1]].last)) { delete peers[p[1]]; renderRoster(); } return;
     case 'CAVATAR': {
       if (p.length < 3 || p[1] === S.id) return;
-      touchPeer(p[1], cleanName(p[2]), null);
+      touchPeer(p[1], cleanName(p[2]), null, at);
       let av = null;
       if (url) { try { const d = await download(url, size, null); if (d.length <= MAX_AVATAR) av = 'data:image/jpeg;base64,' + b64(d); } catch (e) { } }
       S.avatars[p[1]] = av || ''; if (!av) delete S.avatars[p[1]]; save();
       refreshAvatars(); renderRoster(); return;
     }
-    case 'CBLOB': if (url) { try { await handleFrame(await download(url, size, null), null, 0); } catch (e) { } } return;
-    case 'CFILE': return onCloudFile(p, body, url);
+    case 'CBLOB': if (url) { try { await handleFrame(await download(url, size, null), null, 0, at); } catch (e) { } } return;
+    case 'CFILE': return onCloudFile(p, body, url, at);
     case 'MSG': {
       if (p.length < 5 || !markSeen(p[1])) return;
       if (from === S.id) return;
-      touchPeer(from, name, null);
+      touchPeer(from, name, null, at);
       const m = { id: p[1], from, name, t: ticksToMs(p[4]), mine: false, text: str(body) };
       showMessage(m, true);
       onIncoming(m.name, m.text);
       queueSeen(m.id);
       return;
     }
-    case 'SOUND': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); playSound(str(body)); return;
-    case 'SOUNDX': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); playBytes(body, p[5] || '.wav'); return;
-    case 'NUDGE': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); onNudge(name); return;
-    case 'SEEN': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); onSeen(name, p[4]); return;
-    case 'REACT': if (p.length < 6 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null); react(p[4], str(body), name, p[5] === '1', true); return;
+    // Ljud, knackningar och "skriver" ur historiken (äldre än 2 min) spelas inte upp – de är över sedan länge
+    case 'SOUND': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null, at); if (!isStale(at)) playSound(str(body)); return;
+    case 'SOUNDX': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null, at); if (!isStale(at)) playBytes(body, p[5] || '.wav'); return;
+    case 'NUDGE': if (p.length < 4 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null, at); if (!isStale(at)) onNudge(name); return;
+    case 'SEEN': if (p.length < 5 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null, at); onSeen(name, p[4]); return;
+    case 'PRINTRES': {
+      if (p.length < 6 || !markSeen(p[1]) || from === S.id) return;
+      touchPeer(from, name, null, at);
+      const fname = printJobs[p[4]]; if (!fname) return;
+      const msg = str(body);
+      addSystem(p[5] === '1' ? '🖨 ' + fname + ' är utskriven hos ' + name + (msg ? ' (' + msg + ')' : '') + '.'
+                             : '🖨 ' + name + ' kunde inte skriva ut ' + fname + (msg ? ': ' + msg : '') + '.');
+      return;
+    }
+    case 'REACT': if (p.length < 6 || !markSeen(p[1]) || from === S.id) return; touchPeer(from, name, null, at); react(p[4], str(body), name, p[5] === '1', true); return;
   }
 }
-function touchPeer(id, name, status) {
+function touchPeer(id, name, status, at) {
   if (id === S.id) return false;
-  const now = Date.now();
+  at = at || Date.now();
   let cp = peers[id];
-  const fresh = !cp || now - cp.last > 10 * 60000;
-  if (!cp) cp = peers[id] = { name: name || 'Okänd', status: 'online', last: now };
-  if (name) cp.name = name;
-  if (status) cp.status = status;
-  cp.last = now;
+  const fresh = !cp || at - cp.last > 10 * 60000;
+  if (!cp) cp = peers[id] = { name: name || 'Okänd', status: 'online', last: at };
+  if (at >= cp.last) {
+    if (name) cp.name = name;
+    if (status) cp.status = status;
+    cp.last = at;
+  }
   renderRoster();
   return fresh;
 }
-function alivePeers() { const c = Date.now() - 25 * 60000; return Object.keys(peers).filter(id => peers[id].last > c).map(id => Object.assign({ id }, peers[id])).sort((a, b) => a.name.localeCompare(b.name, 'sv')); }
-function sendHello(force) {
+function alivePeers() { const c = Date.now() - PEER_TTL_MIN * 60000; return Object.keys(peers).filter(id => peers[id].last > c).map(id => Object.assign({ id }, peers[id])).sort((a, b) => a.name.localeCompare(b.name, 'sv')); }
+// wantReply: "jag är ny här, svara så jag ser er" (start, lång frånvaro). Pulser och statusbyten ber inte om svar.
+function sendHello(force, wantReply) {
   if (!K) return;
   const now = Date.now();
   if (!force && now - lastHello < 60000) return;
   lastHello = now;
-  publish(frame('CHELLO|' + S.id + '|' + S.name + '|' + S.status));
+  publish(frame('CHELLO|' + S.id + '|' + S.name + '|' + S.status + '|' + (wantReply ? '1' : '0')));
 }
 async function pushAvatar() {
   if (!K || Date.now() - lastAvatarPush < 30 * 60000) return;
@@ -522,11 +583,12 @@ function sendReaction(msgId, emoji) {
   publish(frame('REACT|' + id + '|' + S.id + '|' + S.name + '|' + msgId + '|' + (on ? '1' : '0'), utf8(emoji)));
   react(msgId, emoji, S.name, on, true);
 }
-async function sendFiles(list) {
+async function sendFiles(list, printTo) {
   if (!alivePeers().length) { toast('Ingen annan är online – filer skickas bara när någon är inne'); return; }
   for (const f of list) {
     const id = randId();
-    const rec = { k: 'file', id, from: S.id, name: S.name, t: Date.now(), mine: true, fileName: f.name, size: f.size };
+    const rec = { k: 'file', id, from: S.id, name: S.name, t: Date.now(), mine: true, fileName: f.name, size: f.size, print: !!printTo };
+    if (printTo) printJobs[id] = f.name;
     addFile(rec); S.history.push(rec); trimHistory();
     if (f.size > CLOUD_FILE_LIMIT) { fileState(id, true, 0, 'error', f.size, 'För stor för molnet (max 5 MB)'); continue; }
     if (/^image\//.test(f.type)) { try { const th = await makeThumb(f); rec.thumb = th; save(); fileThumb(id, th); } catch (e) { } }
@@ -534,16 +596,17 @@ async function sendFiles(list) {
     try {
       const data = new Uint8Array(await f.arrayBuffer());
       fileState(id, true, 0, 'active', f.size, 'Skickar 0 %');
-      await putAttachment(frame('CFILE|' + id + '|' + S.id + '|' + S.name + '|' + f.size, utf8(f.name)), data,
+      await putAttachment(frame('CFILE|' + id + '|' + S.id + '|' + S.name + '|' + f.size + (printTo ? '|' + printTo.join(',') : ''), utf8(f.name)), data,
         (done, total) => fileState(id, true, Math.round(done * 100 / total), 'active', f.size, 'Skickar ' + Math.round(done * 100 / total) + ' %'));
-      fileState(id, true, 100, 'done', f.size, 'Skickad');
+      fileState(id, true, 100, 'done', f.size, printTo ? 'Skickad för utskrift' : 'Skickad');
     } catch (e) { fileState(id, true, 0, 'error', f.size, 'Kunde inte skicka: ' + e.message); }
   }
 }
-async function onCloudFile(p, body, url) {
+async function onCloudFile(p, body, url, at) {
   if (p.length < 5 || !url || p[2] === S.id || files[p[1]]) return;
+  if (p.length >= 6 && p[5] && p[5].split(',').indexOf(S.id) < 0) return; // utskriftsjobb till någon annan
   const size = Number(p[4]) || 0, id = p[1], name = cleanName(p[3]), fileName = str(body) || 'fil';
-  touchPeer(p[2], name, null);
+  touchPeer(p[2], name, null, at);
   const rec = { k: 'file', id, from: p[2], name, t: Date.now(), mine: false, fileName, size };
   files[id] = { url, size, name: fileName, mine: false };
   addFile(rec); S.history.push(rec); trimHistory();
@@ -693,6 +756,7 @@ function addFile(r) {
   const ic = el('div', 'fic'); ic.innerHTML = svg(iconFor(r.fileName));
   const body = el('div', 'fbody');
   const fn = el('div', 'fn'); fn.title = r.fileName; text(fn, r.fileName);
+  if (r.print) fn.appendChild(text(el('span', 'ftag'), 'Utskrift'));
   const fm = el('div', 'fm'); fm.id = 'fm_' + r.id; text(fm, sizeText(r.size));
   const bar = el('div', 'bar'); const fill = el('i'); fill.id = 'fill_' + r.id; bar.appendChild(fill); bar.id = 'bar_' + r.id; bar.style.display = 'none';
   const acts = el('div', 'facts'); acts.id = 'acts_' + r.id;
@@ -790,7 +854,7 @@ function closeMenu() { menuEl.classList.add('hidden'); }
 function renderMenu() {
   menuEl.textContent = '';
   const inf = el('div', 'minfo'); inf.appendChild(text(el('b'), S.name));
-  const c = text(el('div', connected ? 'ok' : ''), 'Molnbrygga: ' + (connected ? 'ansluten' : 'ansluter…')); inf.appendChild(c);
+  const c = text(el('div', connected ? 'ok' : ''), 'Molnbrygga: ' + (pauseUntil > Date.now() ? 'pausad till ' + new Date(pauseUntil).toTimeString().slice(0, 5) + ' (' + outq.length + ' i kö)' : connected ? 'ansluten' + (outq.length ? ', ' + outq.length + ' i kö' : '') : 'ansluter…')); inf.appendChild(c);
   menuEl.appendChild(inf);
   const seg = el('div', 'seg');
   const o1 = text(el('div', 'online' + (S.status === 'online' ? ' on' : '')), 'Tillgänglig');
@@ -798,7 +862,7 @@ function renderMenu() {
   o1.onclick = () => setStatus('online'); o2.onclick = () => setStatus('busy');
   seg.append(o1, o2); menuEl.appendChild(seg);
   sep();
-  item(I.edit, 'Byt namn…', () => ask('Byt namn', 'Namnet visas för de du chattar med.', S.name, 'Ditt namn', v => { S.name = cleanName(v); save(); renderMe(); sendHello(true); }));
+  item(I.edit, 'Byt namn…', () => ask('Byt namn', 'Namnet visas för de du chattar med.', S.name, 'Ditt namn', v => { S.name = cleanName(v); save(); renderMe(); if (alivePeers().length) sendHello(true, false); }));
   item(I.photo, 'Välj profilbild…', () => $('avpick').click());
   item(I.close, 'Ta bort profilbild', () => { S.avatar = ''; save(); renderMe(); lastAvatarPush = 0; pushAvatar(); }, !S.avatar);
   sep();
@@ -814,7 +878,7 @@ function renderMenu() {
   function item(icon, label, fn, disabled) { const d = el('div', 'mi' + (disabled ? ' dis' : '')); d.innerHTML = svg(icon); d.appendChild(text(el('span', 'lab'), label)); if (!disabled) d.onclick = e => { e.stopPropagation(); closeMenu(); fn(); }; else d.style.opacity = .45; menuEl.appendChild(d); }
   function toggle(icon, label, key) { const d = el('div', 'mi'); d.innerHTML = svg(icon); d.appendChild(text(el('span', 'lab'), label)); const sw = el('div', 'sw' + (S[key] ? ' on' : '')); sw.appendChild(el('i')); d.appendChild(sw); d.onclick = e => { e.stopPropagation(); S[key] = !S[key]; save(); sw.className = 'sw' + (S[key] ? ' on' : ''); if (key === 'sound' && S.sound) playSound('ding'); if (key === 'notify' && S.notify && window.Notification && Notification.permission === 'default') Notification.requestPermission(); }; menuEl.appendChild(d); }
 }
-function setStatus(s) { S.status = s; save(); renderMe(); closeMenu(); lastHello = 0; sendHello(true); toast(s === 'busy' ? 'Du är nu upptagen – inga ljud' : 'Du är nu tillgänglig'); }
+function setStatus(s) { S.status = s; save(); renderMe(); closeMenu(); if (alivePeers().length) sendHello(true, false); toast(s === 'busy' ? 'Du är nu upptagen – inga ljud' : 'Du är nu tillgänglig'); }
 function closeModal() { $('modal').classList.add('hidden'); }
 function ask(title, desc, value, placeholder, cb, allowEmpty) {
   const card = $('mcard'); card.textContent = '';
@@ -830,6 +894,36 @@ function ask(title, desc, value, placeholder, cb, allowEmpty) {
   $('modal').classList.remove('hidden');
   setTimeout(() => { inp.focus(); inp.select(); }, 30);
 }
+// ============================================================ utskrift
+const printJobs = {}; let printSel = {}, printTargets = null;
+function printDialog() {
+  const card = $('mcard'); card.textContent = '';
+  card.appendChild(text(el('h3'), 'Skicka PDF för utskrift'));
+  card.appendChild(text(el('p'), 'Välj vem som ska skriva ut. PDF:en skickas bara till dem och skrivs ut direkt på deras dator om de har slagit på utskrift i MiniChat.'));
+  const box = el('div', 'plist'); const list = alivePeers();
+  if (!list.length) box.appendChild(text(el('div', 'pempty'), 'Ingen annan är online just nu.'));
+  const ok = text(el('button', 'btn pri'), 'Välj PDF…');
+  const chosen = () => list.filter(x => printSel[x.id]).map(x => x.id);
+  const upd = () => { const c = chosen().length; ok.disabled = !c; ok.style.opacity = c ? 1 : .5; };
+  for (const pp of list) {
+    const r = el('div', 'prow'); r.appendChild(makeAv(pp.id, pp.name, 'sm')); r.appendChild(text(el('div', 'pn'), pp.name));
+    const cb = el('div', 'cbx' + (printSel[pp.id] ? ' on' : '')); r.appendChild(cb);
+    r.onclick = () => { printSel[pp.id] = !printSel[pp.id]; cb.className = 'cbx' + (printSel[pp.id] ? ' on' : ''); upd(); };
+    box.appendChild(r);
+  }
+  card.appendChild(box);
+  const btns = el('div', 'btns'); const cancel = text(el('button', 'btn gho'), 'Avbryt'); cancel.onclick = closeModal;
+  ok.onclick = () => { const ids = chosen(); if (!ids.length) return; printTargets = ids; closeModal(); $('printpick').click(); };
+  btns.append(cancel, ok); card.appendChild(btns); upd();
+  $('modal').classList.remove('hidden');
+}
+function sendForPrint(f) {
+  const ids = printTargets; printTargets = null;
+  if (!ids || !ids.length) return;
+  if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { toast('Bara PDF kan skrivas ut'); return; }
+  sendFiles([f], ids);
+}
+
 function showHelp() {
   const card = $('mcard'); card.textContent = '';
   card.appendChild(text(el('h3'), 'Så funkar MiniChat'));
@@ -838,6 +932,7 @@ function showHelp() {
     '<li><b>Hemskärm:</b> Dela → <i>Lägg till på hemskärmen</i> i Safari så blir det en egen app.</li>' +
     '<li><b>Ljud:</b> skriv <b>*prutt*</b> eller <b>*skratt*</b> så spelas ljudet hos de andra. Ljud på telefonen kräver att du tryckt någonstans i appen först.</li>' +
     '<li><b>Reaktioner:</b> håll fingret på en bubbla.</li>' +
+    '<li><b>Utskrift:</b> skrivarknappen skickar en PDF till de du väljer, och den skrivs ut direkt på deras dator (om de slagit på utskrift i MiniChat).</li>' +
     '<li><b>Knacka:</b> klockan uppe till höger. Hos de andra skakar fönstret.</li>' +
     '<li><b>Offline:</b> meddelanden som skickas när du inte är inne ligger kvar hos servern i 12 timmar och hämtas när du öppnar appen. Filer finns i 3 timmar.</li>' +
     '<li><b>Notiser:</b> iPhone stänger webbappar i bakgrunden, så nya meddelanden syns när du öppnar appen. Vill du ha pling: installera appen <i>ntfy</i> och be om pushalternativet i MiniChat.</li>' +
@@ -880,10 +975,12 @@ function init() {
   load();
   log = $('log'); input = $('input'); roster = $('roster'); menuEl = $('menu'); toastEl = $('toast');
   for (const id of S.seen) seenSet.add(id);
-  $('gearBtn').innerHTML = svg(I.gear); $('nudgeBtn').innerHTML = svg(I.nudge); $('attachBtn').innerHTML = svg(I.attach); $('sendBtn').innerHTML = svg(I.send); $('wlogo').innerHTML = svg(I.chat);
+  $('gearBtn').innerHTML = svg(I.gear); $('nudgeBtn').innerHTML = svg(I.nudge); $('attachBtn').innerHTML = svg(I.attach); $('printBtn').innerHTML = svg(I.print); $('sendBtn').innerHTML = svg(I.send); $('wlogo').innerHTML = svg(I.chat);
   $('gearBtn').onclick = e => { e.stopPropagation(); toggleMenu(); };
   $('nudgeBtn').onclick = () => { unlockAudio(); sendNudge(); };
   $('attachBtn').onclick = () => $('filepick').click();
+  $('printBtn').onclick = printDialog;
+  $('printpick').onchange = e => { unlockAudio(); const f = e.target.files[0]; e.target.value = ''; if (f) sendForPrint(f); };
   $('filepick').onchange = e => { unlockAudio(); sendFiles(Array.from(e.target.files)); e.target.value = ''; };
   $('avpick').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const th = await makeAvatarData(f); S.avatar = th; save(); renderMe(); lastAvatarPush = 0; pushAvatar(); } catch (x) { toast('Kunde inte läsa bilden'); } };
   $('meAvWrap').onclick = () => $('avpick').click();
@@ -900,11 +997,11 @@ function init() {
   document.addEventListener('click', e => { if (!menuEl.classList.contains('hidden') && !menuEl.contains(e.target) && !$('gearBtn').contains(e.target)) closeMenu(); if (!e.target.closest('.bubble')) document.querySelectorAll('.bubble.show').forEach(x => x.classList.remove('show')); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeMenu(); closeModal(); } });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { unread = 0; document.title = 'MiniChat'; if (!es || Date.now() - lastEvent > 90000) connect(); flushSeen(); sendHello(false); }
+    if (document.visibilityState === 'visible') { unread = 0; document.title = 'MiniChat'; if (!es || Date.now() - lastEvent > 90000) connect(); flushSeen(); }
   });
   window.addEventListener('focus', () => { unread = 0; document.title = 'MiniChat'; });
   if (window.visualViewport) { const vv = window.visualViewport; const fit = () => { $('app').style.height = vv.height + 'px'; layout(); }; vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); }
-  setInterval(() => { renderRoster(); if (K) { sendHello(Date.now() - lastHello > 20 * 60000); if (es && Date.now() - lastEvent > 120000 && document.visibilityState === 'visible') connect(); } }, 60000);
+  setInterval(() => { renderRoster(); if (K) { if (Date.now() - lastHello > HEARTBEAT_MIN * 60000) sendHello(true, false); if (es && Date.now() - lastEvent > 120000 && document.visibilityState === 'visible') connect(); } }, 60000);
   if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('sw.js'); } catch (e) { } }
 
   if (S.name && S.code) { showApp(false); renderMe(); replayHistory(); start(); }

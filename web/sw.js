@@ -1,5 +1,5 @@
 // Minimal service worker: gör att appen öppnas även utan nät (då syns historiken).
-const CACHE = 'minichat-v2';
+const CACHE = 'minichat-v4';
 const FILES = ['./', './index.html', './manifest.json', './icon-180.png', './icon-512.png', './sounds/ding.wav', './sounds/knock.wav', './sounds/prutt.wav', './sounds/skratt.wav'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(FILES.map(f => c.add(f).catch(() => null)))).then(() => self.skipWaiting()));

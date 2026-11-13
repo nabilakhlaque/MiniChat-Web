@@ -31,7 +31,7 @@ if not exist "%CSC%" (
     /reference:System.Windows.Forms.dll ^
     /reference:System.Security.dll ^
     /reference:System.Web.Extensions.dll ^
-    AssemblyInfo.cs Program.cs MainForm.cs Network.cs Settings.cs History.cs CloudBridge.cs
+    AssemblyInfo.cs Program.cs MainForm.cs Network.cs Settings.cs History.cs CloudBridge.cs AppLog.cs PdfPrinter.cs
 
 if errorlevel 1 (
     echo.

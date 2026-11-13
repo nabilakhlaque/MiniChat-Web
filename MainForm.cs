@@ -30,10 +30,18 @@ namespace MiniChat
         public void setStatus(string status) { _f.SetChosenStatus(status); }
         public void setCloudCode(string code) { _f.SetCloudCode(code); }
         public void setCloudServer(string url) { _f.SetCloudServer(url); }
+        public void getLog() { _f.PushLog(); }
+        public void copyLog() { _f.CopyLog(); }
+        public void openLog() { _f.OpenLog(); }
+        public void clearLog() { _f.ClearLog(); }
         public void setName(string name) { _f.SetName(name); }
         public void pickAvatar() { _f.ChooseAvatar(); }
         public void removeAvatar() { _f.SetAvatar(null); }
         public void pickFiles() { _f.PickFiles(); }
+        public void pickPrint(string ids) { _f.PickPrint(ids); }
+        public void getPrint() { _f.PushPrintSettings(); }
+        public void setPrint(bool enabled, string printer) { _f.SetPrint(enabled, printer); }
+        public void openAppFolder() { _f.OpenAppFolder(); }
         public void emoji() { _f.OpenEmojiPanel(); }
         public void addAddress(string addr) { _f.AddAddress(addr); }
         public void forgetAddresses() { _f.ForgetAddresses(); }
@@ -153,6 +161,7 @@ namespace MiniChat
         readonly Queue<KeyValuePair<string, object[]>> _jsQueue = new Queue<KeyValuePair<string, object[]>>();
         readonly List<ChatMessage> _outbox = new List<ChatMessage>();
         readonly HashSet<string> _knownTransfers = new HashSet<string>();
+        readonly HashSet<string> _printHandled = new HashSet<string>();
         readonly Dictionary<string, string> _avatarKeys = new Dictionary<string, string>();
         Dictionary<string, string> _knownOnline = new Dictionary<string, string>();
         readonly Dictionary<string, string> _knownStatus = new Dictionary<string, string>();
@@ -175,6 +184,7 @@ namespace MiniChat
             if (_settings.Status != "busy") _settings.Status = "online"; // "away" sätts bara automatiskt
             _effStatus = _settings.Status;
 
+            AppLog.Write("app", "MiniChat startar" + (startInTray ? " (dold i systemfältet)" : "") + ", Windows " + Environment.OSVersion.Version + ", .NET " + Environment.Version);
             BuildView();
             BuildTray();
             BuildTimers();
@@ -197,7 +207,7 @@ namespace MiniChat
                 Dock = DockStyle.Fill,
                 ScriptErrorsSuppressed = true,
                 IsWebBrowserContextMenuEnabled = false,
-                WebBrowserShortcutsEnabled = false,
+                WebBrowserShortcutsEnabled = true, // false stänger även av Ctrl+C/V/X/A och Delete i textrutor; webbläsarens egna kortkommandon stoppas i app.html
                 AllowWebBrowserDrop = true,
                 TabStop = false
             };
@@ -286,7 +296,7 @@ namespace MiniChat
 
             // Ej vid datorn: inget tangentbord/mus i hela Windows på 10 minuter
             _idleTimer = new System.Windows.Forms.Timer { Interval = 15000 };
-            _idleTimer.Tick += delegate { ApplyStatus(); };
+            _idleTimer.Tick += delegate { ApplyStatus(); if (_net != null && _net.CloudEnabled) PushInfo(); };
             _idleTimer.Start();
 
             // Andra som skriver: visas i 6 s efter senaste signal
@@ -454,6 +464,8 @@ namespace MiniChat
 
             Network net = new Network();
             net.AutoAccept = _settings.AutoAccept;
+            net.PrintEnabled = _settings.PrintEnabled;
+            net.PrintResultReceived += (id, name, tid, ok, msg) => OnUi(delegate { OnPrintResult(name, tid, ok, msg); });
             net.RosterChanged += () => OnUi(delegate { OnRoster(); });
             net.MessageReceived += m => OnUi(delegate { OnIncoming(m); });
             net.TransferUpdated += t => OnUi(delegate { OnTransfer(t); });
@@ -471,6 +483,7 @@ namespace MiniChat
             }
             catch (Exception ex)
             {
+                AppLog.Write("fel", "kunde inte starta nätverket: " + ex.Message);
                 MessageBox.Show(this, "Kunde inte starta nätverket:\n" + ex.Message, "MiniChat", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
@@ -483,13 +496,81 @@ namespace MiniChat
             ApplyStatus();
         }
 
-        bool _cloudWasConnected;
+        bool _cloudWasConnected, _cloudEverConnected, _cloudDownAnnounced;
+        System.Windows.Forms.Timer _cloudDownTimer;
+
+        /// <summary>Lugn rapportering: små hickor tystas, bara avbrott över en minut och återkomst därefter syns.</summary>
         void OnCloudState(bool ok, string msg)
         {
-            if (ok && !_cloudWasConnected) Js("addSystem", "☁ Molnbryggan är ansluten – ni når varandra via internet");
-            else if (msg != null) Js("addSystem", "☁ " + msg);
+            if (_cloudDownTimer == null)
+            {
+                _cloudDownTimer = new System.Windows.Forms.Timer { Interval = 60000 };
+                _cloudDownTimer.Tick += delegate
+                {
+                    _cloudDownTimer.Stop();
+                    if (_net != null && _net.CloudEnabled && !_net.CloudConnected && !_cloudDownAnnounced)
+                    {
+                        _cloudDownAnnounced = true;
+                        Js("addSystem", "☁ Molnbryggan har tappat kontakten med servern – försöker igen i bakgrunden");
+                    }
+                };
+            }
+            if (ok)
+            {
+                _cloudDownTimer.Stop();
+                if (!_cloudEverConnected) Js("addSystem", "☁ Molnbryggan är ansluten – ni når varandra via internet");
+                else if (_cloudDownAnnounced) Js("addSystem", "☁ Molnbryggan är ansluten igen");
+                _cloudEverConnected = true;
+                _cloudDownAnnounced = false;
+            }
+            else if (_cloudWasConnected || !_cloudEverConnected)
+            {
+                _cloudDownTimer.Stop();
+                _cloudDownTimer.Start();
+            }
+            if (msg != null) Js("addSystem", "☁ " + msg);
+            if (ok != _cloudWasConnected) AppLog.Write("moln", ok ? "ansluten" : "frånkopplad");
             _cloudWasConnected = ok;
-            PushState();
+            PushInfo();
+        }
+
+        // ================================================================ aktivitetslogg
+
+        public void PushLog()
+        {
+            StringBuilder sb = new StringBuilder("[");
+            foreach (string line in AppLog.Recent(400))
+            {
+                if (sb.Length > 1) sb.Append(',');
+                sb.Append(new Json().Add("l", line).ToString());
+            }
+            sb.Append(']');
+            string head = "Nät: " + (_net == null ? "ej startat" : _net.Peers.Count + " direkt, " + _net.Participants.Count + " online")
+                + "  ·  Moln: " + (_net == null || !_net.CloudEnabled ? "av" : _net.CloudStatus)
+                + "  ·  Status: " + _effStatus;
+            Js("showLog", new Json().Add("head", head).Add("path", AppLog.FilePath).ToString(), sb.ToString());
+        }
+
+        public void CopyLog()
+        {
+            try { Clipboard.SetText(AppLog.AllText()); Js("toast", "Loggen kopierad"); } catch { Js("toast", "Kunde inte kopiera"); }
+        }
+
+        public void OpenLog()
+        {
+            try
+            {
+                if (!File.Exists(AppLog.FilePath)) File.WriteAllText(AppLog.FilePath, "");
+                Process.Start("explorer.exe", "/select,\"" + AppLog.FilePath + "\"");
+            }
+            catch { }
+        }
+
+        public void ClearLog()
+        {
+            AppLog.Clear();
+            AppLog.Write("app", "loggen rensad");
+            PushLog();
         }
 
         public void SetCloudCode(string code)
@@ -497,7 +578,7 @@ namespace MiniChat
             code = CloudBridge.NormalizeCode(code);
             _settings.CloudCode = code;
             _settings.Save();
-            _cloudWasConnected = false;
+            _cloudWasConnected = false; _cloudEverConnected = false; _cloudDownAnnounced = false;
             if (_net != null)
             {
                 if (code.Length == 0) { _net.DisableCloud(); Js("addSystem", "Molnbryggan är avstängd."); }
@@ -548,6 +629,7 @@ namespace MiniChat
 
         void OnIncoming(ChatMessage m)
         {
+            AppLog.Write("chatt", "meddelande från " + m.FromName + " (" + m.Text.Length + " tecken)");
             ShowMessage(m, false, null, true);
             RemoveTyper(m.FromId);
             bool quiet = _effStatus == "busy";
@@ -573,7 +655,7 @@ namespace MiniChat
                 DateTime now = DateTime.Now;
                 Js("addFile", new Json()
                     .Add("id", t.Id).Add("mine", t.Outgoing).Add("sender", sender).Add("name", name)
-                    .Add("fileName", t.FileName).Add("sizeText", SizeText(t.Size))
+                    .Add("fileName", t.FileName).Add("sizeText", SizeText(t.Size)).Add("print", t.PrintRequested)
                     .Add("time", Epoch(now)).Add("showTime", TakeTimeSeparator(now)).Add("timeText", TimeText(now)).ToString());
                 if (t.Outgoing) PushThumb(t.Id, t.FilePath);
                 else
@@ -592,6 +674,8 @@ namespace MiniChat
             Js("fileState", new Json()
                 .Add("id", t.Id).Add("mine", t.Outgoing).Add("pct", t.Percent).Add("state", t.State)
                 .Add("sizeText", SizeText(t.Size)).Add("text", TransferText(t)).ToString());
+
+            if (!t.Outgoing && t.PrintRequested) HandlePrintRequest(t);
 
             if (t.State == "done" || t.State == "error" || t.State == "declined")
             {
@@ -619,7 +703,7 @@ namespace MiniChat
                 case "offer": return t.Outgoing ? "Väntar på svar…" : "vill skicka en fil till dig";
                 case "waiting": return "Väntar på att " + t.ToName + " tar emot…";
                 case "active": return (t.Outgoing ? "Skickar " : "Tar emot ") + t.Percent + " %";
-                case "done": return t.Outgoing ? "Skickad till " + t.ToName : "Mottagen";
+                case "done": return t.Outgoing ? (t.PrintRequested ? "Skickad för utskrift till " : "Skickad till ") + t.ToName : "Mottagen";
                 case "declined": return t.Outgoing ? t.ToName + " avböjde" : "Avböjd";
                 case "error": return t.Error ?? "Misslyckades";
             }
@@ -761,6 +845,7 @@ namespace MiniChat
                 return;
             }
             ChatMessage sent = _net.Send(rest);
+            AppLog.Write("chatt", "skickade meddelande (" + rest.Length + " tecken) till " + (anyone ? _net.Participants.Count + " online" : "molnets brevlåda"));
             ShowMessage(sent, true, !anyone ? "Ligger i molnet – levereras när den andra kommer in" : null, true);
         }
 
@@ -812,6 +897,128 @@ namespace MiniChat
                     Js("addSystem", "Kunde inte skicka " + Path.GetFileName(path) + ": " + ex.Message);
                 }
             }
+        }
+
+        // ================================================================ utskrift
+
+        /// <summary>Avsändaren: välj PDF och skicka den bara till de valda, markerad för utskrift.</summary>
+        public void PickPrint(string idsCsv)
+        {
+            if (_net == null) return;
+            HashSet<string> ids = new HashSet<string>((idsCsv ?? "").Split(',').Where(x => x.Length > 0));
+            List<Participant> online = _net.Participants.Where(x => ids.Contains(x.Id)).ToList();
+            if (online.Count == 0) { Js("toast", "Ingen av de valda är online längre"); return; }
+            using (OpenFileDialog d = new OpenFileDialog { Title = "Välj PDF att skriva ut hos " + string.Join(", ", online.Select(x => x.Name).ToArray()), Multiselect = true, Filter = "PDF-filer|*.pdf" })
+            {
+                if (d.ShowDialog(this) == DialogResult.OK)
+                {
+                    foreach (string path in d.FileNames)
+                    {
+                        if (!PdfPrinter.LooksLikePdf(path)) { Js("addSystem", Path.GetFileName(path) + " är ingen PDF – skickades inte."); continue; }
+                        try
+                        {
+                            AppLog.Write("skrivare", "skickar " + Path.GetFileName(path) + " för utskrift till " + string.Join(", ", online.Select(x => x.Name).ToArray()));
+                            foreach (FileTransfer t in _net.SendFile(path, ids)) OnTransfer(t);
+                        }
+                        catch (Exception ex) { Js("addSystem", "Kunde inte skicka " + Path.GetFileName(path) + ": " + ex.Message); }
+                    }
+                }
+            }
+            Js("focusInput");
+        }
+
+        /// <summary>Mottagaren: en fil markerad för utskrift har kommit (eller erbjuds).</summary>
+        void HandlePrintRequest(FileTransfer t)
+        {
+            if (_net == null || _printHandled.Contains(t.Id)) return;
+            string who = DisplayName(t.FromId, t.FromName);
+            if (!_settings.PrintEnabled)
+            {
+                if (t.State != "offer" && t.State != "done") return;
+                _printHandled.Add(t.Id);
+                AppLog.Write("skrivare", who + " ville skriva ut " + t.FileName + " – utskrift är avstängd här");
+                Js("addSystem", "🖨 " + who + " ville skriva ut " + t.FileName + " här, men utskrift är avstängd (⚙ → Utskrift…).");
+                _net.SendPrintResult(t, false, "utskrift är avstängd på den datorn");
+                return;
+            }
+            if (t.State != "done") return;
+            _printHandled.Add(t.Id);
+            string path = t.FilePath;
+            string printer = _settings.PrinterName;
+            UpdatePrintBubble(t, "Skrivs ut…");
+            Js("addSystem", "🖨 Skriver ut " + t.FileName + " från " + who + "…");
+            Task.Run(() =>
+            {
+                string used;
+                string err = PdfPrinter.Print(path, printer, out used);
+                OnUi(delegate
+                {
+                    if (err == null)
+                    {
+                        AppLog.Write("skrivare", "utskrivet: " + t.FileName + " på " + used);
+                        UpdatePrintBubble(t, "Utskriven på " + used);
+                        Js("addSystem", "🖨 " + t.FileName + " är utskriven på " + used + ".");
+                        if (_net != null) _net.SendPrintResult(t, true, used);
+                    }
+                    else
+                    {
+                        AppLog.Write("skrivare", "kunde inte skriva ut " + t.FileName + ": " + err);
+                        UpdatePrintBubble(t, "Kunde inte skriva ut");
+                        Js("addSystem", "🖨 Kunde inte skriva ut " + t.FileName + ": " + err + ".");
+                        if (_net != null) _net.SendPrintResult(t, false, err);
+                    }
+                });
+            });
+        }
+
+        void UpdatePrintBubble(FileTransfer t, string text)
+        {
+            Js("fileState", new Json()
+                .Add("id", t.Id).Add("mine", t.Outgoing).Add("pct", 100).Add("state", "done")
+                .Add("sizeText", SizeText(t.Size)).Add("text", text).ToString());
+        }
+
+        /// <summary>Avsändaren: svar från en mottagare om hur utskriften gick.</summary>
+        void OnPrintResult(string name, string tid, bool ok, string msg)
+        {
+            if (_net == null) return;
+            FileTransfer t = _net.GetTransfer(tid);
+            if (t == null || !t.Outgoing) return;
+            AppLog.Write("skrivare", name + (ok ? " skrev ut " : " kunde inte skriva ut ") + t.FileName + (msg.Length > 0 ? " (" + msg + ")" : ""));
+            if (ok) Js("addSystem", "🖨 " + t.FileName + " är utskriven hos " + name + (msg.Length > 0 ? " (" + msg + ")" : "") + ".");
+            else Js("addSystem", "🖨 " + name + " kunde inte skriva ut " + t.FileName + (msg.Length > 0 ? ": " + msg : "") + ".");
+            if (t.Via != "cloud") UpdatePrintBubble(t, ok ? "Utskriven hos " + name : "Ej utskriven hos " + name);
+        }
+
+        public void PushPrintSettings()
+        {
+            bool good;
+            string engine = PdfPrinter.EngineText(out good);
+            StringBuilder sb = new StringBuilder("[");
+            foreach (string p in PdfPrinter.Printers())
+            {
+                if (sb.Length > 1) sb.Append(',');
+                sb.Append(new Json().Add("n", p).ToString());
+            }
+            sb.Append(']');
+            Js("showPrint", new Json()
+                .Add("enabled", _settings.PrintEnabled).Add("printer", _settings.PrinterName).Add("def", PdfPrinter.DefaultPrinter())
+                .Add("engine", engine).Add("good", good).Add("url", PdfPrinter.SumatraUrl).ToString(), sb.ToString());
+        }
+
+        public void SetPrint(bool enabled, string printer)
+        {
+            _settings.PrintEnabled = enabled;
+            _settings.PrinterName = printer ?? "";
+            _settings.Save();
+            if (_net != null) _net.PrintEnabled = enabled;
+            AppLog.Write("skrivare", enabled ? "utskrift påslagen (" + (_settings.PrinterName.Length > 0 ? _settings.PrinterName : "standardskrivaren") + ")" : "utskrift avstängd");
+            Js("toast", enabled ? "Utskrift påslagen – " + (_settings.PrinterName.Length > 0 ? _settings.PrinterName : "standardskrivaren") : "Utskrift avstängd");
+        }
+
+        public void OpenAppFolder()
+        {
+            try { Process.Start("explorer.exe", "\"" + Path.GetDirectoryName(Application.ExecutablePath) + "\""); } catch { }
         }
 
         public void PickFiles()
@@ -902,6 +1109,7 @@ namespace MiniChat
             string eff = _settings.Status;
             if (IdleMinutes() >= AwayMinutes) eff = "away";
             bool changed = eff != _effStatus;
+            if (changed) AppLog.Write("app", "status: " + eff + (eff == "away" ? " (inaktiv i " + (int)IdleMinutes() + " min)" : ""));
             _effStatus = eff;
             if (_net != null) _net.SetStatus(eff);
             if (changed || _webReady)
@@ -1321,10 +1529,19 @@ namespace MiniChat
 
         // ================================================================ tillstånd till vyn, tray, ljud
 
+        void PushInfo()
+        {
+            string cloud = _settings.CloudCode.Length == 0 ? "av" : (_net == null || !_net.CloudEnabled) ? "av" : _net.CloudStatus;
+            Js("setInfo", new Json()
+                .Add("ip", string.Join(", ", Network.LocalAddresses().ToArray()))
+                .Add("port", (_net != null ? _net.ListenPort : _settings.Port).ToString())
+                .Add("cloud", cloud).Add("cloudCode", _settings.CloudCode).Add("cloudServer", _settings.CloudServer).ToString());
+        }
+
         void PushState()
         {
             Js("setMe", new Json().Add("name", _settings.Name).Add("avatar", _avatar != null ? DataUrl(_avatar) : "").ToString());
-            string cloud = _settings.CloudCode.Length == 0 ? "av" : (_net == null || !_net.CloudEnabled) ? "av" : _net.CloudConnected ? "ansluten" : "ansluter…";
+            string cloud = _settings.CloudCode.Length == 0 ? "av" : (_net == null || !_net.CloudEnabled) ? "av" : _net.CloudStatus;
             Js("setInfo", new Json()
                 .Add("ip", string.Join(", ", Network.LocalAddresses().ToArray()))
                 .Add("port", (_net != null ? _net.ListenPort : _settings.Port).ToString())

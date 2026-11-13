@@ -9,6 +9,7 @@ En enda `MiniChat.exe` som ligger vid klockan.
 - Status: Tillgänglig / Upptagen (tyst, utom prutt/skratt/knackningar) och automatiskt Ej vid datorn efter 10 min
 - Historik 30 dagar (krypterad med Windows DPAPI), bilder som miniatyrer i bubblan, "skriver…", knacka, reaktioner och "Sett"
 - Filer: dra in i fönstret, tryck **+** eller klistra in med **Ctrl+V** (även bilder från urklipp)
+- Utskrift: skrivarknappen skickar en PDF bara till de du väljer, och den skrivs ut automatiskt hos dem (se nedan)
 - Alltid krypterat: varje förbindelse gör ett ECDH-nyckelutbyte (P-256) och all trafik går som AES-256 + HMAC
 - Systemfältsikon som **blinkar** tills du sett nya meddelanden, diskreta aviseringar, ljud på/av
 - Autostart som val, inga administratörsrättigheter (ingen UAC, autostart via HKCU)
@@ -45,6 +46,19 @@ Som standard tas filer emot automatiskt; stäng av under ⚙ så får du iställ
 Inställningar sparas i `%APPDATA%\MiniChat\settings.txt` (profilbilden som `avatar.jpg` bredvid).
 Autostart läggs i `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` och startar programmet dolt (`--tray`).
 
+## Skriva ut på en annan dator
+
+**På datorn som ska skriva ut:** ⚙ → *Utskrift…* → slå på *Skriv ut PDF:er som skickas hit* och välj skrivare.
+Windows kan inte skriva ut PDF tyst på egen hand, så lägg **SumatraPDF** (portabel version, en enda exe, ingen
+installation – länk finns i dialogen) bredvid `MiniChat.exe`. Utan den används Adobe Reader/Acrobat om det finns.
+
+**Den som skickar:** tryck skrivarknappen bredvid gemet, bocka i vem/vilka som ska skriva ut och välj PDF:en.
+Filen går bara till dem, skrivs ut direkt, och du får ett kvitto i chatten: *utskriven hos X* eller varför inte.
+Fungerar på samma nät, via Tailscale och via molnbryggan (max 5 MB). Från webbappen på telefonen går det också.
+
+Bara PDF skrivs ut, bara på datorer där utskrift är påslaget. Utskriftsfiler tas emot automatiskt där även om
+*Ta emot filer automatiskt* är av. Tänk på att alla med er familjekod kan skicka utskrifter dit.
+
 ## Så hittar datorerna varandra
 
 | Läge | Hur |
@@ -64,8 +78,14 @@ går igenom de flesta skol- och jobbnät, även via proxy. Nyckeln härleds ur k
 bara krypterade blobbar. Meddelanden som skickas när den andra är offline ligger kvar hos servern i ca 12 timmar
 och levereras när den kommer in. På samma nät används fortfarande den direkta vägen, och molnet står tyst.
 
-Begränsningar: ntfy.sh:s gratisnivå (ungefär 250 meddelanden per dag och dator, filer upp till några MB) och att
-en tredje part transporterar trafiken. ⚙ → *Molnserver…* pekar om till en egen ntfy-server om ni vill slippa både.
+Begränsningar: ntfy.sh:s gratisnivå (ungefär 250 meddelanden per dag **per internetadress** – alla datorer och
+telefoner bakom samma hemrouter delar alltså på kvoten; filer upp till några MB) och att en tredje part transporterar
+trafiken. Närvaropulsen är därför gles (var 45:e minut) och molnet används bara när någon faktiskt bara nås den vägen.
+Är kvoten slut säger Aktivitetsloggen det (`daily message quota`) och den fylls på vid midnatt UTC.
+⚙ → *Molnserver…* pekar om till en egen ntfy-server om ni vill slippa både kvoten och mellanhanden.
+
+Har ni Tailscale (eller annat VPN) mellan datorerna: upptäckten går med broadcast och fungerar inte genom tunneln,
+så skriv in den andras Tailscale-adress (`100.x.y.z`) under ⚙ → *Anslut till adress…* en gång. Sedan går allt direkt.
 
 ### iPhone, Android och andra datorer: webbversionen
 
@@ -130,6 +150,8 @@ en andra start öppnar bara fönstret på den första). Båda använder samma sp
 | `Settings.cs` | settings.txt (inkl. beständigt id och vald status), avatar.jpg, autostart, IE11-registernyckel |
 | `History.cs` | Lokal historik, varje post DPAPI-krypterad, 30 dagar / 2000 poster |
 | `CloudBridge.cs` | Molnbryggan: ntfy över HTTPS, krypterade ramar och bilagor, återanslutning, 12 h brevlåda |
+| `PdfPrinter.cs` | Tyst PDF-utskrift via SumatraPDF / Adobe / Windows printto, skrivarlista |
+| `AppLog.cs` | Aktivitetsloggen (⚙ → Aktivitetslogg…), även i `%APPDATA%\MiniChat\minichat.log` |
 | `web/` | Webbappen för iPhone/Android/webbläsare: `index.html`, `manifest.json`, `sw.js`, ikoner, egen README |
 | `app.manifest` | asInvoker (ingen UAC), DPI-medveten |
 | `app.ico`, `alert.ico`, `ding.wav`, `prutt.wav`, `skratt.wav`, `knock.wav` | ikoner och ljud, bäddas in |

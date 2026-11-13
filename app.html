@@ -202,6 +202,35 @@ svg { display: block; }
 .minfo .cloudline { margin-top: 2px; }
 .minfo .cloudline.ok { color: #2E9E5B; }
 
+/* ---------- aktivitetslogg ---------- */
+.card.wide { width: 560px; max-width: 94%; }
+.loghead { font-size: 12px; color: #6B7A90; margin: 0 0 8px; }
+/* utskrift */
+.plist { max-height: 220px; overflow-y: auto; margin: 0 -4px; }
+.prow { display: flex; align-items: center; padding: 8px 6px; border-radius: 12px; cursor: pointer; transition: background .12s; }
+.prow:hover { background: #F1F5F9; }
+.prow .av { margin-right: 10px; }
+.prow .pn { flex: 1; font-size: 14px; }
+.prow .pn small { display: block; color: #94A3B8; font-size: 11.5px; }
+.cbx { width: 20px; height: 20px; border-radius: 7px; border: 2px solid #CBD5E1; box-sizing: border-box; flex: 0 0 20px; transition: all .15s; position: relative; }
+.cbx.on { background: #3C8CE7; border-color: #3C8CE7; }
+.cbx.on:after { content: ''; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.pempty { color: #94A3B8; font-size: 13px; padding: 10px 6px; }
+.prtline { display: flex; align-items: center; padding: 6px 0 12px; font-size: 14px; cursor: pointer; }
+.prtline .lab { flex: 1; }
+.plabel { font-size: 12px; color: #6B7A90; margin: 4px 0 6px; }
+select.inp { height: 40px; padding: 0 10px; }
+.engine { font-size: 12.5px; line-height: 1.5; padding: 10px 12px; border-radius: 12px; margin-top: 12px; background: #ECFDF5; color: #166534; }
+.engine.bad { background: #FEF3C7; color: #92400E; }
+.engine a { color: inherit; font-weight: 600; margin-right: 12px; }
+.ftag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: #3C8CE7; background: #E8F1FD; border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+.logbox { font-family: Consolas, "Cascadia Mono", monospace; font-size: 11.5px; line-height: 1.45; background: #F5F7FA; border: 1px solid #E1E8F0; border-radius: 12px;
+  padding: 10px 12px; max-height: 55vh; overflow: auto; white-space: pre-wrap; word-wrap: break-word; color: #2B3A4E; }
+.logbox .moln { color: #2F7FDB; } .logbox .fel { color: #C0392B; font-weight: 600; } .logbox .fil { color: #8E44AD; } .logbox .nat { color: #1F7A5C; } .logbox .chatt { color: #6B7A90; }
+.logbox .ts { color: #94A3B8; }
+.btns.left { justify-content: space-between; }
+.btns .grp .btn { margin-left: 0; margin-right: 8px; }
+
 /* ---------- toast ---------- */
 #toast { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); background: rgba(31,42,55,.92); color: #fff; font-size: 13px; padding: 9px 16px;
   border-radius: 999px; box-shadow: 0 8px 24px rgba(16,24,40,.25); opacity: 0; visibility: hidden; transition: opacity .25s, transform .25s, visibility .25s; z-index: 30; white-space: nowrap; }
@@ -224,6 +253,7 @@ svg { display: block; }
   <div id="composer">
     <div class="pill" id="pill">
       <button class="ib" id="attachBtn" title="Skicka fil"></button>
+      <button class="ib" id="printBtn" title="Skicka PDF för utskrift"></button>
       <textarea id="input" rows="1" placeholder="Skriv ett meddelande…"></textarea>
       <button class="ib" id="emojiBtn" title="Emoji"></button>
       <button class="send off" id="sendBtn" title="Skicka"></button>
@@ -276,6 +306,8 @@ var I = {
   nudge: 'M7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.39 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.02 1.45 3.39 3.77 3.54 6.42zM18 11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-6 11c.14 0 .27-.01.4-.04.65-.14 1.18-.58 1.44-1.18.1-.24.15-.5.15-.78h-4c.01 1.1.9 2 2.01 2z',
   sound: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
   cloud: 'M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z',
+  list: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
+  print: 'M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z',
   key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z'
 };
 var EMOJIS = ['\uD83D\uDC4D', '\u2764\uFE0F', '\uD83D\uDE02', '\uD83D\uDE2E', '\uD83D\uDE4F'];
@@ -294,11 +326,19 @@ var ext = {
         case 'setStatus': x.setStatus(a); break;
         case 'setCloudCode': x.setCloudCode(a); break;
         case 'setCloudServer': x.setCloudServer(a); break;
+        case 'getLog': x.getLog(); break;
+        case 'copyLog': x.copyLog(); break;
+        case 'openLog': x.openLog(); break;
+        case 'clearLog': x.clearLog(); break;
         case 'openSounds': x.openSounds(); break;
         case 'setName': x.setName(a); break;
         case 'pickAvatar': x.pickAvatar(); break;
         case 'removeAvatar': x.removeAvatar(); break;
         case 'pickFiles': x.pickFiles(); break;
+        case 'pickPrint': x.pickPrint(a); break;
+        case 'getPrint': x.getPrint(); break;
+        case 'setPrint': x.setPrint(a ? true : false, b || ''); break;
+        case 'openAppFolder': x.openAppFolder(); break;
         case 'emoji': x.emoji(); break;
         case 'addAddress': x.addAddress(a); break;
         case 'forgetAddresses': x.forgetAddresses(); break;
@@ -340,12 +380,14 @@ function init() {
   $('nudgeBtn').innerHTML = svg(I.nudge);
   $('nudgeBtn').onclick = function () { ext.call('nudge'); input.focus(); };
   $('attachBtn').innerHTML = svg(I.attach);
+  $('printBtn').innerHTML = svg(I.print);
   $('emojiBtn').innerHTML = svg(I.smile);
   $('sendBtn').innerHTML = svg(I.send);
   $('wlogo').innerHTML = svg(I.chat);
 
   $('gearBtn').onclick = function (e) { stop(e); toggleMenu(); };
   $('attachBtn').onclick = function () { ext.call('pickFiles'); };
+  $('printBtn').onclick = printDialog;
   $('emojiBtn').onclick = function () { input.focus(); ext.call('emoji'); };
   $('sendBtn').onclick = function () { sendNow(); };
   $('meAvWrap').onclick = function () { ext.call('pickAvatar'); };
@@ -372,7 +414,14 @@ function init() {
   document.onkeydown = function (e) {
     e = e || window.event;
     if (e.keyCode === 27) { closeMenu(); closeModal(); }
-    if (e.keyCode === 116 || (e.ctrlKey && (e.keyCode === 82 || e.keyCode === 78 || e.keyCode === 80))) { if (e.preventDefault) e.preventDefault(); return false; } // F5, Ctrl+R/N/P
+    var tg = e.target || e.srcElement, tag = tg && tg.tagName ? tg.tagName.toLowerCase() : '';
+    var editable = tag === 'textarea' || tag === 'input' || (tg && tg.isContentEditable);
+    if (e.keyCode === 116 ||                                                              // F5
+        (e.ctrlKey && !e.altKey && (e.keyCode === 82 || e.keyCode === 78 || e.keyCode === 80 || e.keyCode === 79 || e.keyCode === 76 || e.keyCode === 70)) || // Ctrl+R/N/P/O/L/F
+        (e.altKey && (e.keyCode === 37 || e.keyCode === 39)) ||                              // Alt+vänster/höger (bakåt/framåt)
+        (e.keyCode === 8 && !editable)) {                                                     // Backspace utanför textruta = bakåt
+      if (e.preventDefault) e.preventDefault(); e.returnValue = false; return false;
+    }
   };
   document.onmouseup = function (e) {
     e = e || window.event;
@@ -446,8 +495,10 @@ function setMyStatus(json) {
   if (!menuEl.className.match(/hidden/)) renderMenu();
 }
 
+var rosterList = [];
 function setRoster(json) {
   var list = JSON.parse(json);
+  rosterList = list;
   roster.innerHTML = '';
   if (!list.length) {
     var p = el('span', 'pulse'); roster.appendChild(p);
@@ -550,6 +601,7 @@ function addFile(json) {
   var ic = el('div', 'fic'); ic.innerHTML = svg(iconFor(m.fileName));
   var body = el('div', 'fbody');
   var fn = el('div', 'fn'); fn.title = m.fileName; text(fn, m.fileName);
+  if (m.print) { var tg = text(el('span', 'ftag'), 'Utskrift'); fn.appendChild(tg); }
   var fm = el('div', 'fm'); fm.id = 'fm_' + m.id; text(fm, m.sizeText);
   var bar = el('div', 'bar'); var fill = el('i'); fill.id = 'fill_' + m.id; bar.appendChild(fill);
   var acts = el('div', 'facts'); acts.id = 'acts_' + m.id;
@@ -755,9 +807,11 @@ function renderMenu() {
   toggle(I.download, 'Ta emot filer automatiskt', 'autoAccept');
   toggle(I.renew, 'Starta med Windows', 'autostart');
   item(I.folder, 'Mottagna filer', function () { ext.call('openDownloads'); });
+  item(I.print, 'Utskrift…', function () { ext.call('getPrint'); });
   item(I.sound, 'Egna ljud (mappen ljud)', function () { ext.call('openSounds'); });
   sep();
   item(I.clear, 'Rensa chatten och historiken', function () { clearAll(); ext.call('clearChat'); });
+  item(I.list, 'Aktivitetslogg…', function () { ext.call('getLog'); });
   item(I.info, 'Så funkar det', showHelp);
   item(I.power, 'Avsluta MiniChat', function () { ext.call('exit'); }, false, true);
 
@@ -781,7 +835,7 @@ function renderMenu() {
 }
 
 // ============================================================ modaler
-function closeModal() { $('modal').className = 'hidden'; focusInput(); }
+function closeModal() { $('modal').className = 'hidden'; $('mcard').className = 'card'; focusInput(); }
 function ask(title, desc, value, placeholder, cb, allowEmpty) {
   var card = $('mcard'); card.innerHTML = '';
   card.appendChild(text(el('h3'), title));
@@ -815,6 +869,106 @@ function promptPort() {
   ask('Lyssnarport', 'TCP-port som andra ansluter till. Gäller nästa gång MiniChat startas.', info.port, '48555',
     function (v) { if (!/^\d{1,5}$/.test(v) || +v < 1 || +v > 65535) { toast('Ange ett tal mellan 1 och 65535'); return; } ext.call('setPort', v); });
 }
+// Aktivitetslogg (fylls från C#: showLog(metaJson, linesJson))
+function showLog(metaJson, linesJson) {
+  var meta = JSON.parse(metaJson), lines = JSON.parse(linesJson);
+  var card = $('mcard'); card.innerHTML = ''; card.className = 'card wide';
+  card.appendChild(text(el('h3'), 'Aktivitetslogg'));
+  card.appendChild(text(el('div', 'loghead'), meta.head));
+  var box = el('div', 'logbox');
+  if (!lines.length) text(box, 'Inget loggat ännu.');
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].l, row = el('div');
+    var m = /^(\S+ \S+)\s+(\S+)\s+(.*)$/.exec(l);
+    if (m) {
+      row.className = m[2].toLowerCase().replace(/ä/g, 'a');
+      row.appendChild(text(el('span', 'ts'), m[1].substr(11) + '  '));
+      text(row, m[2] + '  ' + m[3]);
+    } else text(row, l);
+    box.appendChild(row);
+  }
+  card.appendChild(box);
+  var btns = el('div', 'btns left');
+  var grp = el('div', 'grp');
+  var b1 = text(el('button', 'btn gho'), 'Uppdatera'); b1.onclick = function () { ext.call('getLog'); };
+  var b2 = text(el('button', 'btn gho'), 'Kopiera'); b2.onclick = function () { ext.call('copyLog'); };
+  var b3 = text(el('button', 'btn gho'), 'Öppna filen'); b3.onclick = function () { ext.call('openLog'); };
+  var b4 = text(el('button', 'btn gho'), 'Rensa'); b4.onclick = function () { ext.call('clearLog'); };
+  grp.appendChild(b1); grp.appendChild(b2); grp.appendChild(b3); grp.appendChild(b4);
+  var ok = text(el('button', 'btn pri'), 'Stäng'); ok.onclick = closeModal;
+  btns.appendChild(grp); btns.appendChild(ok);
+  card.appendChild(btns);
+  $('modal').className = '';
+  box.scrollTop = box.scrollHeight;
+}
+
+// ============================================================ utskrift
+var printSel = {};
+// Avsändaren: välj vilka som ska skriva ut, sedan PDF-filen
+function printDialog() {
+  var card = $('mcard'); card.innerHTML = '';
+  card.appendChild(text(el('h3'), 'Skicka PDF för utskrift'));
+  card.appendChild(text(el('p'), 'Välj vem som ska skriva ut. Filen skickas bara till dem och skrivs ut automatiskt om de har slagit på utskrift (⚙ → Utskrift).'));
+  var box = el('div', 'plist');
+  var rows = [];
+  if (!rosterList.length) box.appendChild(text(el('div', 'pempty'), 'Ingen annan är online just nu.'));
+  for (var i = 0; i < rosterList.length; i++) (function (p) {
+    var r = el('div', 'prow');
+    r.appendChild(makeAv(p.id, p.name, 'sm'));
+    var nm = text(el('div', 'pn'), p.name);
+    nm.appendChild(text(el('small'), p.via === 'cloud' ? 'via molnbryggan (max 5 MB)' : 'direkt'));
+    r.appendChild(nm);
+    var cb = el('div', 'cbx' + (printSel[p.id] ? ' on' : ''));
+    r.appendChild(cb);
+    r.onclick = function () { printSel[p.id] = !printSel[p.id]; cb.className = 'cbx' + (printSel[p.id] ? ' on' : ''); upd(); };
+    box.appendChild(r);
+    rows.push(p.id);
+  })(rosterList[i]);
+  card.appendChild(box);
+  var btns = el('div', 'btns');
+  var cancel = text(el('button', 'btn gho'), 'Avbryt'); cancel.onclick = closeModal;
+  var ok = text(el('button', 'btn pri'), 'Välj PDF…');
+  function chosen() { var a = []; for (var j = 0; j < rows.length; j++) if (printSel[rows[j]]) a.push(rows[j]); return a; }
+  function upd() { var c = chosen().length; ok.disabled = c === 0; ok.style.opacity = c === 0 ? '.5' : '1'; }
+  ok.onclick = function () { var ids = chosen(); if (!ids.length) return; closeModal(); ext.call('pickPrint', ids.join(',')); };
+  btns.appendChild(cancel); btns.appendChild(ok);
+  card.appendChild(btns);
+  upd();
+  $('modal').className = '';
+}
+// Mottagaren: inställningar (fylls från C#)
+function showPrint(metaJson, printersJson) {
+  var m = JSON.parse(metaJson), printers = JSON.parse(printersJson);
+  var on = !!m.enabled;
+  var card = $('mcard'); card.innerHTML = '';
+  card.appendChild(text(el('h3'), 'Utskrift'));
+  card.appendChild(text(el('p'), 'När det är påslaget skrivs PDF:er som någon skickar för utskrift till den här datorn ut automatiskt. Vanliga filer påverkas inte.'));
+  var line = el('div', 'prtline');
+  line.appendChild(text(el('span', 'lab'), 'Skriv ut PDF:er som skickas hit'));
+  var sw = el('div', 'sw' + (on ? ' on' : '')); sw.appendChild(el('i')); line.appendChild(sw);
+  line.onclick = function () { on = !on; sw.className = 'sw' + (on ? ' on' : ''); };
+  card.appendChild(line);
+  card.appendChild(text(el('div', 'plabel'), 'Skrivare'));
+  var sel = el('select', 'inp');
+  var o0 = el('option'); o0.value = ''; text(o0, 'Windows standardskrivare' + (m.def ? ' (' + m.def + ')' : '')); sel.appendChild(o0);
+  for (var i = 0; i < printers.length; i++) { var o = el('option'); o.value = printers[i].n; text(o, printers[i].n); if (printers[i].n === m.printer) o.selected = true; sel.appendChild(o); }
+  card.appendChild(sel);
+  var eng = el('div', 'engine' + (m.good ? '' : ' bad'));
+  text(eng, m.engine);
+  eng.appendChild(el('br'));
+  var a1 = el('a'); a1.href = '#'; text(a1, 'Hämta SumatraPDF'); a1.onclick = function () { ext.call('openUrl', m.url); return false; };
+  var a2 = el('a'); a2.href = '#'; text(a2, 'Öppna MiniChat-mappen'); a2.onclick = function () { ext.call('openAppFolder'); return false; };
+  eng.appendChild(a1); eng.appendChild(a2);
+  card.appendChild(eng);
+  var btns = el('div', 'btns');
+  var cancel = text(el('button', 'btn gho'), 'Avbryt'); cancel.onclick = closeModal;
+  var ok = text(el('button', 'btn pri'), 'Spara');
+  ok.onclick = function () { closeModal(); ext.call('setPrint', on, sel.value); };
+  btns.appendChild(cancel); btns.appendChild(ok);
+  card.appendChild(btns);
+  $('modal').className = '';
+}
+
 function showHelp() {
   var card = $('mcard'); card.innerHTML = '';
   card.appendChild(text(el('h3'), 'Så funkar MiniChat'));
@@ -830,6 +984,7 @@ function showHelp() {
     '<li><b>Status:</b> välj Tillgänglig eller Upptagen i menyn. Upptagen tystar ljud och aviseringar (prutt, skratt och knackningar hörs ändå). Efter 10 minuter utan aktivitet visas du som Ej vid datorn.</li>' +
     '<li><b>Knacka:</b> klockan uppe till höger skakar fönstret hos de andra och plockar fram det.</li>' +
     '<li><b>Reaktioner:</b> håll musen över en bubbla och välj en emoji. "Sett" visas under ditt senaste meddelande när den andra har läst det.</li>' +
+    '<li><b>Utskrift:</b> skrivarknappen bredvid gemet skickar en PDF till de du väljer och skrivs ut där direkt. Den som ska skriva ut slår på det under ⚙ → <i>Utskrift…</i> och väljer skrivare. Bäst resultat med SumatraPDF (portabel) bredvid MiniChat.exe.</li>' +
     '<li><b>Historik:</b> de senaste 30 dagarna sparas krypterat på den här datorn.</li>' +
     '<li><b>Emoji:</b> ☺-knappen eller Windows-tangenten + punkt.</li>' +
     '</ul><p>Port 48555 (TCP) och 48556 (UDP) används som standard. Windows kan fråga om brandväggen första gången – svara Tillåt om du kan.</p>';
